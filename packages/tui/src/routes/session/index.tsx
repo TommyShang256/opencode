@@ -2779,7 +2779,9 @@ function Shell(props: ToolProps) {
   const permission = useToolPermission(() => props.part)
   const color = createMemo(() => (permission() ? theme.text.feedback.warning.default : theme.text.default))
   const shellID = createMemo(() => stringValue(props.metadata.shellID))
-  const background = createMemo(() => Boolean(shellID()) && props.part.state.status !== "running")
+  const background = createMemo(
+    () => props.part.state.status === "completed" && props.metadata.status === "running",
+  )
   const backgroundRunning = createMemo(() => {
     const id = shellID()
     return Boolean(id && data.shell.get(id))

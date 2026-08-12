@@ -286,6 +286,7 @@ export const Plugin = {
                   output,
                   content,
                   metadata: {
+                    status: output.status,
                     truncated: output.truncated,
                     ...("exit" in output && output.exit !== undefined ? { exit: output.exit } : {}),
                     ...("shellID" in output && output.shellID !== undefined ? { shellID: output.shellID } : {}),
