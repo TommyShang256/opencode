@@ -77,11 +77,12 @@ export function extractAccountId(tokens: TokenResponse): string | undefined {
   return undefined
 }
 
-export function extractResidency(token: string): "eu" | "us" | undefined {
+export function extractResidency(token: string): string | undefined {
   const claims = parseJwtClaims(token)
   const residency =
     claims?.["https://api.openai.com/auth"]?.chatgpt_compute_residency ?? claims?.chatgpt_compute_residency
-  return residency === "eu" || residency === "us" ? residency : undefined
+  if (!residency || residency === "no_constraint") return undefined
+  return residency
 }
 
 function buildAuthorizeUrl(redirectUri: string, pkce: PkceCodes, state: string): string {

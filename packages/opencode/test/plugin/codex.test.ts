@@ -150,7 +150,24 @@ describe("plugin.codex", () => {
       expect(extractResidency(createTestJwt({ chatgpt_compute_residency: "us" }))).toBe("us")
     })
 
-    test("ignores unconstrained, unsupported, and malformed values", () => {
+    test("supports compute residency values without maintaining a region list", () => {
+      expect(
+        extractResidency(
+          createTestJwt({
+            "https://api.openai.com/auth": { chatgpt_compute_residency: "ae" },
+          }),
+        ),
+      ).toBe("ae")
+      expect(
+        extractResidency(
+          createTestJwt({
+            "https://api.openai.com/auth": { chatgpt_compute_residency: "future-region_1" },
+          }),
+        ),
+      ).toBe("future-region_1")
+    })
+
+    test("ignores unconstrained and data residency values", () => {
       expect(
         extractResidency(
           createTestJwt({
@@ -158,8 +175,26 @@ describe("plugin.codex", () => {
           }),
         ),
       ).toBeUndefined()
-      expect(extractResidency(createTestJwt({ chatgpt_compute_residency: "europe" }))).toBeUndefined()
+      expect(
+        extractResidency(
+          createTestJwt({
+            "https://api.openai.com/auth": { chatgpt_data_residency: "gb" },
+          }),
+        ),
+      ).toBeUndefined()
+      expect(extractResidency(createTestJwt({ chatgpt_compute_residency: "" }))).toBeUndefined()
       expect(extractResidency("not-a-jwt")).toBeUndefined()
+    })
+
+    test("prefers a namespaced unconstrained value over a root residency", () => {
+      expect(
+        extractResidency(
+          createTestJwt({
+            chatgpt_compute_residency: "eu",
+            "https://api.openai.com/auth": { chatgpt_compute_residency: "no_constraint" },
+          }),
+        ),
+      ).toBeUndefined()
     })
   })
 
