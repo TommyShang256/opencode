@@ -191,11 +191,10 @@ const redactBody = (body: string, secrets: ReadonlySet<string>) =>
     body.replace(REDACT_JSON_FIELD, `$1"${REDACTED}"`).replace(REDACT_QUERY_FIELD, `$1${REDACTED}`),
   )
 
-const responseBody = (body: string | void, secrets: ReadonlySet<string>) => {
+const responseBody = (body: string | void) => {
   if (body === undefined) return {}
-  const redacted = redactBody(body, secrets)
-  if (redacted.length <= BODY_LIMIT) return { body: redacted }
-  return { body: redacted.slice(0, BODY_LIMIT), bodyTruncated: true }
+  if (body.length <= BODY_LIMIT) return { body }
+  return { body: body.slice(0, BODY_LIMIT), bodyTruncated: true }
 }
 
 const decodeProviderBody = Schema.decodeUnknownOption(
@@ -207,12 +206,9 @@ const decodeProviderBody = Schema.decodeUnknownOption(
   ),
 )
 
-const providerMessage = (status: number, body: { readonly body?: string }) => {
-  if (body.body && body.body.length <= 500) {
-    const decoded = Option.getOrUndefined(decodeProviderBody(body.body))
-    return `Provider request failed with HTTP ${status}: ${decoded?.error?.message ?? decoded?.message ?? body.body}`
-  }
-  return `Provider request failed with HTTP ${status}`
+const providerMessage = (status: number, body: string | void) => {
+  const decoded = body === undefined ? undefined : Option.getOrUndefined(decodeProviderBody(body))
+  return decoded?.error?.message ?? decoded?.message ?? `Provider request failed with HTTP ${status}`
 }
 
 const responseHttp = (input: {
@@ -240,13 +236,14 @@ const statusError =
       const headers = normalizedHeaders(response.headers)
       const retryAfter = retryAfterMs(headers)
       const rateLimit = rateLimitDetails(headers, retryAfter)
-      const details = responseBody(body, secretValues(request))
+      const redacted = body === undefined ? undefined : redactBody(body, secretValues(request))
+      const details = responseBody(redacted)
       return yield* new AIError({
         module: "RequestExecutor",
         method: "execute",
         reason: classifyProviderFailure({
           status: response.status,
-          message: providerMessage(response.status, details),
+          message: providerMessage(response.status, redacted),
           retryAfterMs: retryAfter,
           rateLimit,
           http: responseHttp({
@@ -277,7 +274,9 @@ export const classifyHttpFailure = (input: {
   const headers = normalizedHeaders(Headers.fromInput(input.responseHeaders))
   const retryAfter = retryAfterMs(headers)
   const rateLimit = rateLimitDetails(headers, retryAfter)
-  const details = responseBody(input.responseBody ?? undefined, new Set<string>())
+  const details = responseBody(
+    input.responseBody === undefined ? undefined : redactBody(input.responseBody, new Set<string>()),
+  )
   return classifyProviderFailure({
     message: input.message,
     status: input.status,

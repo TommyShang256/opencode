@@ -66,6 +66,7 @@ const expectAIError = (error: unknown) => {
 }
 
 const errorHttp = (error: AIError) => ("http" in error.reason ? error.reason.http : undefined)
+const largeProviderMessage = `Upstream request failed: ${"validation failed; ".repeat(1_000)}`
 
 describe("RequestExecutor", () => {
   it.effect("parses response body failures at the executor seam", () =>
@@ -218,7 +219,31 @@ describe("RequestExecutor", () => {
       expectAIError(error)
       expect(error.reason).toMatchObject({ _tag: "InvalidRequest" })
       expect("classification" in error.reason ? error.reason.classification : undefined).toBeUndefined()
+      expect(error.reason.message).toBe("Provider request failed with HTTP 400")
     }).pipe(Effect.provide(responsesLayer([new Response("invalid parameter", { status: 400 })]))),
+  )
+
+  it.effect("preserves structured provider messages from large error bodies", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectAIError(error)
+      expect(error.reason).toMatchObject({ _tag: "InvalidRequest", message: largeProviderMessage })
+      expect(errorHttp(error)?.bodyTruncated).toBe(true)
+    }).pipe(
+      Effect.provide(
+        responsesLayer([
+          new Response(
+            JSON.stringify({
+              model: "gpt-5.6-sol",
+              error: { type: "invalid_request", message: largeProviderMessage },
+            }),
+            { status: 400 },
+          ),
+        ]),
+      ),
+    ),
   )
 
   it.effect("classifies provider rate limits hidden behind HTTP 400", () =>
