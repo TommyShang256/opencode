@@ -9,6 +9,7 @@ export function fallback(): ThemeTokensDefinition {
       default: red,
       action: Object.fromEntries(ActionVariant.literals.map((variant) => [variant, { default: red }])),
       formfield: { default: red },
+      formfieldIndicator: { default: red },
       feedback: Object.fromEntries(FeedbackKind.literals.map((kind) => [kind, { default: red }])),
     },
     background: {

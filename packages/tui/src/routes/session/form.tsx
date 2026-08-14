@@ -893,7 +893,9 @@ export function FormPrompt(props: {
                             paddingRight={1}
                           >
                             <text
-                              fg={active() ? theme.text.formfield.focused : theme.text.subdued}
+                              fg={
+                                active() ? theme.text.formfieldIndicator.focused : theme.text.formfieldIndicator.default
+                              }
                             >{`${i() + 1}.`}</text>
                           </box>
                           <box
@@ -904,7 +906,11 @@ export function FormPrompt(props: {
                               <text
                                 width={4}
                                 flexShrink={0}
-                                fg={picked() ? theme.text.formfield.selected : theme.text.subdued}
+                                fg={
+                                  picked()
+                                    ? theme.text.formfieldIndicator.selected
+                                    : theme.text.formfieldIndicator.default
+                                }
                               >
                                 [{picked() ? "✓" : " "}]
                               </text>
@@ -914,7 +920,7 @@ export function FormPrompt(props: {
                             </text>
                           </box>
                           <Show when={!multi()}>
-                            <text fg={theme.text.formfield.selected}>{picked() ? " ✓" : ""}</text>
+                            <text fg={theme.text.formfieldIndicator.selected}>{picked() ? " ✓" : ""}</text>
                           </Show>
                         </box>
                         <Show when={row.description}>
@@ -940,7 +946,9 @@ export function FormPrompt(props: {
                         backgroundColor={other() ? theme.background.formfield.focused : theme.background.default}
                         paddingRight={1}
                       >
-                        <text fg={other() ? theme.text.formfield.focused : theme.text.subdued}>
+                        <text
+                          fg={other() ? theme.text.formfieldIndicator.focused : theme.text.formfieldIndicator.default}
+                        >
                           {`${rows().length + 1}.`}
                         </text>
                       </box>
@@ -953,7 +961,11 @@ export function FormPrompt(props: {
                           <text
                             width={4}
                             flexShrink={0}
-                            fg={customChecked() ? theme.text.formfield.selected : theme.text.subdued}
+                            fg={
+                              customChecked()
+                                ? theme.text.formfieldIndicator.selected
+                                : theme.text.formfieldIndicator.default
+                            }
                           >
                             [{customChecked() ? "✓" : " "}]
                           </text>
@@ -966,7 +978,7 @@ export function FormPrompt(props: {
                                 {input() || "Type your own answer"}
                               </text>
                               <Show when={!multi() && customPicked()}>
-                                <text fg={theme.text.formfield.selected}>✓</text>
+                                <text fg={theme.text.formfieldIndicator.selected}>✓</text>
                               </Show>
                             </>
                           }
