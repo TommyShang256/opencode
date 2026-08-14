@@ -904,7 +904,7 @@ export function FormPrompt(props: {
                               <text
                                 width={4}
                                 flexShrink={0}
-                                fg={picked() ? theme.text.feedback.success.default : theme.text.subdued}
+                                fg={picked() ? theme.text.formfield.selected : theme.text.subdued}
                               >
                                 [{picked() ? "✓" : " "}]
                               </text>
@@ -914,7 +914,7 @@ export function FormPrompt(props: {
                             </text>
                           </box>
                           <Show when={!multi()}>
-                            <text fg={theme.text.feedback.success.default}>{picked() ? " ✓" : ""}</text>
+                            <text fg={theme.text.formfield.selected}>{picked() ? " ✓" : ""}</text>
                           </Show>
                         </box>
                         <Show when={row.description}>
@@ -953,7 +953,7 @@ export function FormPrompt(props: {
                           <text
                             width={4}
                             flexShrink={0}
-                            fg={customChecked() ? theme.text.feedback.success.default : theme.text.subdued}
+                            fg={customChecked() ? theme.text.formfield.selected : theme.text.subdued}
                           >
                             [{customChecked() ? "✓" : " "}]
                           </text>
@@ -966,7 +966,7 @@ export function FormPrompt(props: {
                                 {input() || "Type your own answer"}
                               </text>
                               <Show when={!multi() && customPicked()}>
-                                <text fg={theme.text.feedback.success.default}>✓</text>
+                                <text fg={theme.text.formfield.selected}>✓</text>
                               </Show>
                             </>
                           }
