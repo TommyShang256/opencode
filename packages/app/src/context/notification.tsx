@@ -278,7 +278,7 @@ export function createServerNotificationState(input: { sdk: ServerSDK; sync: Ser
     })
   }
 
-  const unsub = input.sdk.event.listen((e) => {
+  const unsub = input.sdk.eventByDir.listen((e) => {
     const event = e.details
     if (
       event.type !== "session.execution.succeeded" &&

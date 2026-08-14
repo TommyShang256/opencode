@@ -54,7 +54,7 @@ import { createServerSession, type ServerSession } from "./server-session"
 import { createCatalogSync } from "./server-sync/catalog"
 import { createConnectionSync } from "./server-sync/connection"
 import { usePlatform } from "./platform"
-import { useServer } from "./server"
+import { useData, useServer } from "./server"
 
 export function shouldRefreshWorkspaceSessions(event: ServerEvent) {
   const type = event.current?.type ?? event.type
@@ -568,7 +568,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return event
   }
 
-  const unsub = serverSDK.event.listen((e) => {
+  const unsub = serverSDK.eventByDir.listen((e) => {
     const directory = e.name
     const key = directoryKey(directory)
     const event = e.details

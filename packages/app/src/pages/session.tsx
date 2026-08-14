@@ -101,7 +101,7 @@ import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
 import { extractPromptFromParts } from "@/utils/prompt"
 import { formatServerError, isLocalSessionNotFoundError, isSessionNotFoundError } from "@/utils/server-errors"
-import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
+import { requireServerKey, sessionHref } from "@/utils/session-route"
 import { useUsageExceededDialogs } from "./session/usage-exceeded-dialogs"
 import { createSessionLineage } from "./session/session-lineage"
 
@@ -2128,9 +2128,12 @@ export default function Page() {
               const id = controller.data.parentID()
               if (!id) return
               navigate(
-                controller.identity.params.serverKey
-                  ? sessionHref(requireServerKey(controller.identity.params.serverKey), id)
-                  : legacySessionHref(sdk().directory, id),
+                sessionHref(
+                  controller.identity.params.serverKey
+                    ? requireServerKey(controller.identity.params.serverKey)
+                    : ServerConnection.key(serverSDK.server),
+                  id,
+                ),
               )
             },
             setPromptRef: (el) => {
