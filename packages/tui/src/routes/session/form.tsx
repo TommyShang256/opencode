@@ -907,9 +907,11 @@ export function FormPrompt(props: {
                                 width={4}
                                 flexShrink={0}
                                 fg={
-                                  picked()
-                                    ? theme.text.formfieldIndicator.selected
-                                    : theme.text.formfieldIndicator.default
+                                  active()
+                                    ? theme.text.formfieldIndicator.focused
+                                    : picked()
+                                      ? theme.text.formfieldIndicator.selected
+                                      : theme.text.formfieldIndicator.default
                                 }
                               >
                                 [{picked() ? "✓" : " "}]
@@ -962,9 +964,11 @@ export function FormPrompt(props: {
                             width={4}
                             flexShrink={0}
                             fg={
-                              customChecked()
-                                ? theme.text.formfieldIndicator.selected
-                                : theme.text.formfieldIndicator.default
+                              other()
+                                ? theme.text.formfieldIndicator.focused
+                                : customChecked()
+                                  ? theme.text.formfieldIndicator.selected
+                                  : theme.text.formfieldIndicator.default
                             }
                           >
                             [{customChecked() ? "✓" : " "}]
