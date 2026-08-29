@@ -1,0 +1,4565 @@
+{
+  "info": {
+    "_postman_id": "c45664cd-cf11-4a1f-9535-d6164768464e",
+    "name": "OpenCode V2 Server API",
+    "description": "由 packages/protocol/openapi.json 生成。包含当前 V2 Server 的全部接口，并补充实际运行时要求的 HTTP Basic Auth。",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{username}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{password}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:4096",
+      "type": "string"
+    },
+    {
+      "key": "username",
+      "value": "opencode",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "replace-with-a-secret",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "01 服务健康",
+      "description": "health API，共 2 个接口。",
+      "item": [
+        {
+          "name": "Check server health · v2.health.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "Check server health\n\nReport the owning server process and its application status.\n\nOperation ID: v2.health.get"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('服务器健康', () => {",
+                  "  pm.response.to.have.status(200)",
+                  "  pm.expect(pm.response.json().healthy).to.eql(true)",
+                  "})"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Stop the managed server · v2.health.stop",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"instanceID\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/service/stop",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "service",
+                "stop"
+              ]
+            },
+            "description": "Stop the managed server\n\nRequest graceful shutdown of one exact managed server instance.\n\nOperation ID: v2.health.stop"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "02 服务器信息",
+      "description": "server API，共 1 个接口。",
+      "item": [
+        {
+          "name": "Get server information · v2.server.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/server",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "server"
+              ]
+            },
+            "description": "Get server information\n\nReturn the URLs that can be used to connect to this server.\n\nOperation ID: v2.server.get"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "03 位置与工作区",
+      "description": "location API，共 1 个接口。",
+      "item": [
+        {
+          "name": "Get location · v2.location.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/location?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "location"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get location\n\nResolve the requested location or the server default location.\n\nOperation ID: v2.location.get"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "04 Agent",
+      "description": "agent API，共 2 个接口。",
+      "item": [
+        {
+          "name": "List agents · v2.agent.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/agent?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "agent"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List agents\n\nRetrieve currently registered agents.\n\nOperation ID: v2.agent.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Get agent · v2.agent.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/agent/{{agentId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "agent",
+                "{{agentId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get agent\n\nRetrieve a single currently registered agent.\n\nOperation ID: v2.agent.get"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "05 插件",
+      "description": "plugin API，共 1 个接口。",
+      "item": [
+        {
+          "name": "List plugins · v2.plugin.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/plugin?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "plugin"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List plugins\n\nRetrieve currently loaded plugins.\n\nOperation ID: v2.plugin.list"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "06 会话与消息",
+      "description": "session API，共 36 个接口。",
+      "item": [
+        {
+          "name": "List sessions · v2.session.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session"
+              ],
+              "query": [
+                {
+                  "key": "workspace",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
+                  "value": "asc",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "parentID",
+                  "value": "{{sessionId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "directory",
+                  "value": "{{directory}}",
+                  "disabled": true
+                },
+                {
+                  "key": "project",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "subpath",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List sessions\n\nRetrieve sessions in the requested order. Items keep that order across pages; use cursor.next or cursor.previous to move through the ordered list.\n\nOperation ID: v2.session.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Create session · v2.session.create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Postman debug session\",\n  \"location\": {\n    \"directory\": \"{{directory}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session"
+              ]
+            },
+            "description": "Create session\n\nCreate a session at the requested location.\n\nOperation ID: v2.session.create"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const json = pm.response.json()",
+                  "  const value = json.data?.id ?? json.id",
+                  "  if (value) pm.environment.set('sessionId', value)",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Import session · v2.session.import",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"info\": {\n    \"id\": \"example-id\",\n    \"projectID\": \"{{projectId}}\",\n    \"cost\": 1,\n    \"tokens\": {\n      \"input\": 1,\n      \"output\": 1,\n      \"reasoning\": 1,\n      \"cache\": {\n        \"read\": {},\n        \"write\": {}\n      }\n    },\n    \"time\": {\n      \"created\": 1,\n      \"updated\": 1\n    },\n    \"location\": {\n      \"directory\": \"{{directory}}\"\n    }\n  },\n  \"messages\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/import",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "import"
+              ]
+            },
+            "description": "Import session\n\nImport a projected session transcript at the requested location.\n\nOperation ID: v2.session.import"
+          },
+          "response": []
+        },
+        {
+          "name": "Export session · v2.session.export",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/export",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "export"
+              ],
+              "query": [
+                {
+                  "key": "sanitize",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Export session\n\nExport a complete projected session transcript.\n\nOperation ID: v2.session.export"
+          },
+          "response": []
+        },
+        {
+          "name": "List active sessions · v2.session.active",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/active",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "active"
+              ]
+            },
+            "description": "List active sessions\n\nRetrieve foreground Session drains currently owned by this OpenCode process. Sessions absent from the result are inactive.\n\nOperation ID: v2.session.active"
+          },
+          "response": []
+        },
+        {
+          "name": "Get session · v2.session.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}"
+              ]
+            },
+            "description": "Get session\n\nRetrieve a session by ID.\n\nOperation ID: v2.session.get"
+          },
+          "response": []
+        },
+        {
+          "name": "Delete session · v2.session.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}"
+              ]
+            },
+            "description": "Delete session\n\nDelete a session and its child sessions.\n\nOperation ID: v2.session.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Fork session · v2.session.fork",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"boundary\": {\n    \"type\": \"before\",\n    \"messageID\": \"{{messageId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/fork",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "fork"
+              ]
+            },
+            "description": "Fork session\n\nCreate a child session by copying projected history through or before a message boundary.\n\nOperation ID: v2.session.fork"
+          },
+          "response": []
+        },
+        {
+          "name": "Switch session agent · v2.session.switchAgent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent\": \"{{agentId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/agent",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "agent"
+              ]
+            },
+            "description": "Switch session agent\n\nSwitch the agent used by subsequent provider turns.\n\nOperation ID: v2.session.switchAgent"
+          },
+          "response": []
+        },
+        {
+          "name": "Switch session model · v2.session.switchModel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": {\n    \"id\": \"example-id\",\n    \"providerID\": \"{{providerId}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/model",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "model"
+              ]
+            },
+            "description": "Switch session model\n\nSwitch the model used by subsequent provider turns.\n\nOperation ID: v2.session.switchModel"
+          },
+          "response": []
+        },
+        {
+          "name": "Rename session · v2.session.rename",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Postman debug session\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/rename",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "rename"
+              ]
+            },
+            "description": "Rename session\n\nUpdate the session title.\n\nOperation ID: v2.session.rename"
+          },
+          "response": []
+        },
+        {
+          "name": "Move session · v2.session.move",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directory\": \"{{directory}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/move",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "move"
+              ]
+            },
+            "description": "Move session\n\nMove a session to another project directory, optionally transferring local changes.\n\nOperation ID: v2.session.move"
+          },
+          "response": []
+        },
+        {
+          "name": "Send message · v2.session.prompt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Reply with a short connectivity confirmation.\",\n  \"resume\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/prompt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "prompt"
+              ]
+            },
+            "description": "Send message\n\nDurably admit one session input and schedule agent-loop execution unless resume is false.\n\nOperation ID: v2.session.prompt"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const json = pm.response.json()",
+                  "  const value = json.data?.id ?? json.id",
+                  "  if (value) pm.environment.set('messageId', value)",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Run command · v2.session.command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"pwd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/command",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "command"
+              ]
+            },
+            "description": "Run command\n\nResolve a slash command into prompt input, admit it durably, and schedule execution unless resume is false.\n\nOperation ID: v2.session.command"
+          },
+          "response": []
+        },
+        {
+          "name": "Activate skill · v2.session.skill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skill\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/skill",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "skill"
+              ]
+            },
+            "description": "Activate skill\n\nActivate a skill for a session by appending a skill message and resuming execution.\n\nOperation ID: v2.session.skill"
+          },
+          "response": []
+        },
+        {
+          "name": "Add synthetic message · v2.session.synthetic",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Reply with a short connectivity confirmation.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/synthetic",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "synthetic"
+              ]
+            },
+            "description": "Add synthetic message\n\nDurably admit synthetic session input and schedule execution unless resume is false.\n\nOperation ID: v2.session.synthetic"
+          },
+          "response": []
+        },
+        {
+          "name": "Run shell command · v2.session.shell",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"pwd\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/shell",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "shell"
+              ]
+            },
+            "description": "Run shell command\n\nExecute one shell command in the session's working directory. Emits a shell.started event before execution and a shell.ended event with the merged output after.\n\nOperation ID: v2.session.shell"
+          },
+          "response": []
+        },
+        {
+          "name": "Compact session · v2.session.compact",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/compact",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "compact"
+              ]
+            },
+            "description": "Compact session\n\nQueue a durable session compaction request.\n\nOperation ID: v2.session.compact"
+          },
+          "response": []
+        },
+        {
+          "name": "Wait for session · v2.session.wait",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/wait",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "wait"
+              ]
+            },
+            "description": "Wait for session\n\nWait for a session agent loop to become idle.\n\nOperation ID: v2.session.wait"
+          },
+          "response": []
+        },
+        {
+          "name": "Stage session revert · v2.session.revert.stage",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageID\": \"{{messageId}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/revert/stage",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "revert",
+                "stage"
+              ]
+            },
+            "description": "Stage session revert\n\nStage or move a reversible session boundary and optionally apply its file changes.\n\nOperation ID: v2.session.revert.stage"
+          },
+          "response": []
+        },
+        {
+          "name": "Clear staged revert · v2.session.revert.clear",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/revert/clear",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "revert",
+                "clear"
+              ]
+            },
+            "description": "Clear staged revert\n\nOperation ID: v2.session.revert.clear"
+          },
+          "response": []
+        },
+        {
+          "name": "Commit staged revert · v2.session.revert.commit",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/revert/commit",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "revert",
+                "commit"
+              ]
+            },
+            "description": "Commit staged revert\n\nOperation ID: v2.session.revert.commit"
+          },
+          "response": []
+        },
+        {
+          "name": "Get session context · v2.session.context",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/context",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "context"
+              ]
+            },
+            "description": "Get session context\n\nRetrieve the active context messages for a session (all messages after the last compaction).\n\nOperation ID: v2.session.context"
+          },
+          "response": []
+        },
+        {
+          "name": "List session inbox · v2.session.inbox.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/inbox",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "inbox"
+              ]
+            },
+            "description": "List session inbox\n\nList durable enqueued session work not yet delivered, ordered by enqueue sequence. Includes user, synthetic, compaction, and move items.\n\nOperation ID: v2.session.inbox.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel inbox input · v2.session.inbox.cancel",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/inbox/{{inboxId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "inbox",
+                "{{inboxId}}"
+              ]
+            },
+            "description": "Cancel inbox input\n\nCancel an inbox item that has not yet been delivered.\n\nOperation ID: v2.session.inbox.cancel"
+          },
+          "response": []
+        },
+        {
+          "name": "Steer queued item · v2.session.inbox.steer",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/inbox/{{inboxId}}/steer",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "inbox",
+                "{{inboxId}}",
+                "steer"
+              ]
+            },
+            "description": "Steer queued item\n\nChange a queued inbox item to steer delivery and wake session execution.\n\nOperation ID: v2.session.inbox.steer"
+          },
+          "response": []
+        },
+        {
+          "name": "Queue steered item · v2.session.inbox.queue",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/inbox/{{inboxId}}/queue",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "inbox",
+                "{{inboxId}}",
+                "queue"
+              ]
+            },
+            "description": "Queue steered item\n\nChange a steered inbox item to queued delivery.\n\nOperation ID: v2.session.inbox.queue"
+          },
+          "response": []
+        },
+        {
+          "name": "List instruction entries · v2.session.instructions.entry.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/instructions/entries",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "instructions",
+                "entries"
+              ]
+            },
+            "description": "List instruction entries\n\nList API-managed instruction entries attached to the session.\n\nOperation ID: v2.session.instructions.entry.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Put instruction entry · v2.session.instructions.entry.put",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/instructions/entries/{{key}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "instructions",
+                "entries",
+                "{{key}}"
+              ]
+            },
+            "description": "Put instruction entry\n\nAttach or replace one durable instruction entry. Changes announce as updates at the next step boundary.\n\nOperation ID: v2.session.instructions.entry.put"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove instruction entry · v2.session.instructions.entry.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/instructions/entries/{{key}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "instructions",
+                "entries",
+                "{{key}}"
+              ]
+            },
+            "description": "Remove instruction entry\n\nRemove one instruction entry; the removal is announced to the model at the next step boundary.\n\nOperation ID: v2.session.instructions.entry.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Generate text from session context · v2.session.generate",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Reply with a short connectivity confirmation.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/generate",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "generate"
+              ]
+            },
+            "description": "Generate text from session context\n\nGenerate transient text from the current session context without mutating session history.\n\nOperation ID: v2.session.generate"
+          },
+          "response": []
+        },
+        {
+          "name": "Read the session log · v2.session.log",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/session/{{sessionId}}/log",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "session",
+                "{{sessionId}}",
+                "log"
+              ],
+              "query": [
+                {
+                  "key": "after",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "follow",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Read the session log\n\nExperimental durable session event log. Reads events after an exclusive aggregate sequence and continues with live events when follow=true.\n\nOperation ID: v2.session.log\n\n响应类型：SSE 事件流。Postman 会保持连接，需手动停止。"
+          },
+          "response": []
+        },
+        {
+          "name": "Interrupt session execution · v2.session.interrupt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/interrupt",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "interrupt"
+              ],
+              "query": [
+                {
+                  "key": "continue",
+                  "value": "true",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Interrupt session execution\n\nInterrupt active execution owned by this OpenCode process. Idle interruption is a no-op. When continue=true, execution resumes if durable inbox work remains after interruption.\n\nOperation ID: v2.session.interrupt"
+          },
+          "response": []
+        },
+        {
+          "name": "Background blocking session tools · v2.session.background",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/background",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "background"
+              ]
+            },
+            "description": "Background blocking session tools\n\nMove active foreground backgroundable tools for this session into background observation. Idle requests are a no-op.\n\nOperation ID: v2.session.background"
+          },
+          "response": []
+        },
+        {
+          "name": "Get session message · v2.session.message",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/message/{{messageId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "message",
+                "{{messageId}}"
+              ]
+            },
+            "description": "Get session message\n\nRetrieve one projected message owned by the Session.\n\nOperation ID: v2.session.message"
+          },
+          "response": []
+        },
+        {
+          "name": "Get session messages · v2.message.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/message",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "message"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "order",
+                  "value": "asc",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get session messages\n\nRetrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline.\n\nOperation ID: v2.message.list"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "07 模型",
+      "description": "model API，共 2 个接口。",
+      "item": [
+        {
+          "name": "List models · v2.model.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/model?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "model"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List models\n\nRetrieve the current snapshot of available models ordered by release date. The snapshot may precede initial plugin settlement.\n\nOperation ID: v2.model.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Get default model · v2.model.default",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/model/default?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "model",
+                "default"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get default model\n\nRetrieve the model used when a session has no explicit model selection.\n\nOperation ID: v2.model.default"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "08 文本生成",
+      "description": "generate API，共 1 个接口。",
+      "item": [
+        {
+          "name": "Generate text · v2.generate.text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Reply with a short connectivity confirmation.\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/generate?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "generate"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Generate text\n\nRun one stateless model generation at the requested location and return the assistant text. Uses the location's default model when none is specified.\n\nOperation ID: v2.generate.text"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "09 Provider",
+      "description": "provider API，共 2 个接口。",
+      "item": [
+        {
+          "name": "List providers · v2.provider.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/provider?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "provider"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List providers\n\nRetrieve active AI providers so clients can show provider availability and configuration.\n\nOperation ID: v2.provider.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Get provider · v2.provider.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/provider/{{providerId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "provider",
+                "{{providerId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get provider\n\nRetrieve a single AI provider so clients can inspect its availability and endpoint settings.\n\nOperation ID: v2.provider.get"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "10 集成与认证",
+      "description": "integration API，共 11 个接口。",
+      "item": [
+        {
+          "name": "List integrations · v2.integration.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/integration?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List integrations\n\nRetrieve available integrations and their authentication methods.\n\nOperation ID: v2.integration.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Get integration · v2.integration.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get integration\n\nRetrieve one integration and its authentication methods.\n\nOperation ID: v2.integration.get"
+          },
+          "response": []
+        },
+        {
+          "name": "Add wellknown integration · v2.experimental.integration.wellknown.add",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/integration/wellknown?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "integration",
+                "wellknown"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Add wellknown integration\n\nDiscover and persist an experimental wellknown integration source.\n\nOperation ID: v2.experimental.integration.wellknown.add"
+          },
+          "response": []
+        },
+        {
+          "name": "Connect with key · v2.integration.connect.key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"{{key}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/key?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "key"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Connect with key\n\nRun a key authentication method and store the resulting credential.\n\nOperation ID: v2.integration.connect.key"
+          },
+          "response": []
+        },
+        {
+          "name": "Begin OAuth connection · v2.integration.oauth.connect",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"methodID\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/oauth?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "oauth"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Begin OAuth connection\n\nStart an OAuth attempt and return the authorization details.\n\nOperation ID: v2.integration.oauth.connect"
+          },
+          "response": []
+        },
+        {
+          "name": "Get OAuth attempt status · v2.integration.oauth.status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/oauth/{{attemptId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "oauth",
+                "{{attemptId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get OAuth attempt status\n\nPoll the current status of an OAuth attempt.\n\nOperation ID: v2.integration.oauth.status"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel OAuth connection · v2.integration.oauth.cancel",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/oauth/{{attemptId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "oauth",
+                "{{attemptId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Cancel OAuth connection\n\nCancel an OAuth attempt and release its resources.\n\nOperation ID: v2.integration.oauth.cancel"
+          },
+          "response": []
+        },
+        {
+          "name": "Complete OAuth connection · v2.integration.oauth.complete",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/oauth/{{attemptId}}/complete?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "oauth",
+                "{{attemptId}}",
+                "complete"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Complete OAuth connection\n\nComplete a code-based OAuth attempt and store the resulting credential.\n\nOperation ID: v2.integration.oauth.complete"
+          },
+          "response": []
+        },
+        {
+          "name": "Begin command connection · v2.integration.command.connect",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"methodID\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/command?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "command"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Begin command connection\n\nStart a command authentication attempt.\n\nOperation ID: v2.integration.command.connect"
+          },
+          "response": []
+        },
+        {
+          "name": "Get command attempt status · v2.integration.command.status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/command/{{attemptId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "command",
+                "{{attemptId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get command attempt status\n\nPoll the current status and output of a command authentication attempt.\n\nOperation ID: v2.integration.command.status"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel command connection · v2.integration.command.cancel",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/integration/{{integrationId}}/connect/command/{{attemptId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "integration",
+                "{{integrationId}}",
+                "connect",
+                "command",
+                "{{attemptId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Cancel command connection\n\nCancel a command authentication attempt and terminate its process.\n\nOperation ID: v2.integration.command.cancel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "11 MCP",
+      "description": "mcp API，共 6 个接口。",
+      "item": [
+        {
+          "name": "List MCP servers · v2.mcp.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/mcp?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mcp"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List MCP servers\n\nRetrieve configured MCP servers and their connection status.\n\nOperation ID: v2.mcp.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Add MCP server · v2.mcp.add",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"config\": {\n    \"type\": \"local\",\n    \"command\": \"pwd\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/mcp/{{serverName}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mcp",
+                "{{serverName}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Add MCP server\n\nAdd an MCP server at runtime or replace an existing one, connecting it immediately.\n\nOperation ID: v2.mcp.add"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove MCP server · v2.mcp.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/mcp/{{serverName}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mcp",
+                "{{serverName}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Remove MCP server\n\nStop an MCP server and remove it from the runtime set until restart.\n\nOperation ID: v2.mcp.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Connect MCP server · v2.mcp.connect",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/mcp/{{serverName}}/connect?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mcp",
+                "{{serverName}}",
+                "connect"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Connect MCP server\n\nConnect an MCP server at runtime, overriding a disabled configuration until restart.\n\nOperation ID: v2.mcp.connect"
+          },
+          "response": []
+        },
+        {
+          "name": "Disconnect MCP server · v2.mcp.disconnect",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/mcp/{{serverName}}/disconnect?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mcp",
+                "{{serverName}}",
+                "disconnect"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Disconnect MCP server\n\nDisconnect an MCP server at runtime, removing its tools until reconnected.\n\nOperation ID: v2.mcp.disconnect"
+          },
+          "response": []
+        },
+        {
+          "name": "List MCP resources · v2.mcp.resource.catalog",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/mcp/resource?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "mcp",
+                "resource"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List MCP resources\n\nRetrieve resources and resource templates from connected MCP servers.\n\nOperation ID: v2.mcp.resource.catalog"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "12 凭据",
+      "description": "credential API，共 2 个接口。",
+      "item": [
+        {
+          "name": "Update credential · v2.credential.update",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/credential/{{credentialId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credential",
+                "{{credentialId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Update credential\n\nUpdate a stored credential label.\n\nOperation ID: v2.credential.update"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove credential · v2.credential.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/credential/{{credentialId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "credential",
+                "{{credentialId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Remove credential\n\nRemove a stored integration credential.\n\nOperation ID: v2.credential.remove"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "13 项目",
+      "description": "project API，共 2 个接口。",
+      "item": [
+        {
+          "name": "List projects · v2.project.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/project",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "project"
+              ]
+            },
+            "description": "List projects\n\nList known projects.\n\nOperation ID: v2.project.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Get current project · v2.project.current",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/project/current?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "project",
+                "current"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get current project\n\nResolve the project for the requested location.\n\nOperation ID: v2.project.current"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "14 交互表单",
+      "description": "form API，共 7 个接口。",
+      "item": [
+        {
+          "name": "List pending form requests · v2.form.request.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/form/request?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "form",
+                "request"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List pending form requests\n\nRetrieve pending forms for a location.\n\nOperation ID: v2.form.request.list"
+          },
+          "response": []
+        },
+        {
+          "name": "List session forms · v2.session.form.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/form",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "form"
+              ]
+            },
+            "description": "List session forms\n\nRetrieve pending forms for a session.\n\nOperation ID: v2.session.form.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Create session form · v2.session.form.create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"Postman debug session\",\n  \"fields\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/form",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "form"
+              ]
+            },
+            "description": "Create session form\n\nCreate a form for a session.\n\nOperation ID: v2.session.form.create"
+          },
+          "response": []
+        },
+        {
+          "name": "Get session form · v2.session.form.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/form/{{formId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "form",
+                "{{formId}}"
+              ]
+            },
+            "description": "Get session form\n\nRetrieve a form for a session.\n\nOperation ID: v2.session.form.get"
+          },
+          "response": []
+        },
+        {
+          "name": "Get form state · v2.session.form.state",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/form/{{formId}}/state",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "form",
+                "{{formId}}",
+                "state"
+              ]
+            },
+            "description": "Get form state\n\nRetrieve the current state for a form.\n\nOperation ID: v2.session.form.state"
+          },
+          "response": []
+        },
+        {
+          "name": "Reply to form · v2.session.form.reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/form/{{formId}}/reply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "form",
+                "{{formId}}",
+                "reply"
+              ]
+            },
+            "description": "Reply to form\n\nSubmit an answer to a pending form.\n\nOperation ID: v2.session.form.reply"
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel form · v2.session.form.cancel",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/form/{{formId}}/cancel",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "form",
+                "{{formId}}",
+                "cancel"
+              ]
+            },
+            "description": "Cancel form\n\nCancel a pending form.\n\nOperation ID: v2.session.form.cancel"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "15 权限",
+      "description": "permission API，共 7 个接口。",
+      "item": [
+        {
+          "name": "List pending permission requests · v2.permission.request.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/permission/request?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permission",
+                "request"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List pending permission requests\n\nRetrieve pending permission requests for a location.\n\nOperation ID: v2.permission.request.list"
+          },
+          "response": []
+        },
+        {
+          "name": "List saved permissions · v2.permission.saved.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/permission/saved",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permission",
+                "saved"
+              ],
+              "query": [
+                {
+                  "key": "projectID",
+                  "value": "{{projectId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List saved permissions\n\nRetrieve saved permissions, optionally filtered by project.\n\nOperation ID: v2.permission.saved.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove saved permission · v2.permission.saved.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/permission/saved/{{shellId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "permission",
+                "saved",
+                "{{shellId}}"
+              ]
+            },
+            "description": "Remove saved permission\n\nRemove a saved permission by ID.\n\nOperation ID: v2.permission.saved.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Create permission request · v2.session.permission.create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"example\",\n  \"resources\": []\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/permission",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "permission"
+              ]
+            },
+            "description": "Create permission request\n\nEvaluate and, when approval is required, create a permission request for a session.\n\nOperation ID: v2.session.permission.create"
+          },
+          "response": []
+        },
+        {
+          "name": "List session permission requests · v2.session.permission.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/permission",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "permission"
+              ]
+            },
+            "description": "List session permission requests\n\nRetrieve pending permission requests owned by a session.\n\nOperation ID: v2.session.permission.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Get permission request · v2.session.permission.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/permission/{{requestId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "permission",
+                "{{requestId}}"
+              ]
+            },
+            "description": "Get permission request\n\nRetrieve a pending permission request owned by a session.\n\nOperation ID: v2.session.permission.get"
+          },
+          "response": []
+        },
+        {
+          "name": "Reply to pending permission request · v2.session.permission.reply",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"once\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/session/{{sessionId}}/permission/{{requestId}}/reply",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "session",
+                "{{sessionId}}",
+                "permission",
+                "{{requestId}}",
+                "reply"
+              ]
+            },
+            "description": "Reply to pending permission request\n\nRespond to a pending permission request owned by a session.\n\nOperation ID: v2.session.permission.reply"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "16 文件系统",
+      "description": "filesystem API，共 3 个接口。",
+      "item": [
+        {
+          "name": "Read file · v2.fs.read",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/octet-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fs/read/{{filePath}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fs",
+                "read",
+                "{{filePath}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Read file\n\nServe one file relative to the requested location.\n\nOperation ID: v2.fs.read\n\n响应类型：二进制文件。"
+          },
+          "response": []
+        },
+        {
+          "name": "List directory · v2.fs.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fs/list?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fs",
+                "list"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "path",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List directory\n\nList direct children of one directory relative to the requested location.\n\nOperation ID: v2.fs.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Find files · v2.fs.find",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/fs/find?location%5Bdirectory%5D={{directory}}&query=OpenCode V2",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "fs",
+                "find"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "query",
+                  "value": "OpenCode V2",
+                  "disabled": false
+                },
+                {
+                  "key": "type",
+                  "value": "file",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Find files\n\nFind recursively ranked filesystem entries relative to the requested location.\n\nOperation ID: v2.fs.find"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "17 命令",
+      "description": "command API，共 1 个接口。",
+      "item": [
+        {
+          "name": "List commands · v2.command.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/command?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "command"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List commands\n\nRetrieve currently registered commands.\n\nOperation ID: v2.command.list"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "18 Skill",
+      "description": "skill API，共 1 个接口。",
+      "item": [
+        {
+          "name": "List skills · v2.skill.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/skill?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "skill"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List skills\n\nRetrieve currently registered skills.\n\nOperation ID: v2.skill.list"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "19 事件流",
+      "description": "event API，共 1 个接口。",
+      "item": [
+        {
+          "name": "Subscribe to events · v2.event.subscribe",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/event",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "event"
+              ]
+            },
+            "description": "Subscribe to events\n\nSubscribe to native event payloads for the server. Volatile by contract: a slow consumer overflows and fails the stream, and events during disconnection are missed.\n\nOperation ID: v2.event.subscribe\n\n响应类型：SSE 事件流。Postman 会保持连接，需手动停止。"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "20 PTY 终端",
+      "description": "pty API，共 7 个接口。",
+      "item": [
+        {
+          "name": "List PTY sessions · v2.pty.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pty?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List PTY sessions\n\nList PTY sessions for a location, including exited sessions retained until removal.\n\nOperation ID: v2.pty.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Create PTY session · v2.pty.create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"zsh\",\n  \"args\": [],\n  \"cwd\": \"{{directory}}\",\n  \"title\": \"Postman PTY\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/pty?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Create PTY session\n\nCreate a pseudo-terminal session for a location.\n\nOperation ID: v2.pty.create"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const json = pm.response.json()",
+                  "  const value = json.data?.id ?? json.id",
+                  "  if (value) pm.environment.set('ptyId', value)",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get PTY session · v2.pty.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pty/{{ptyId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty",
+                "{{ptyId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get PTY session\n\nGet one PTY session, including its exit code once exited.\n\nOperation ID: v2.pty.get"
+          },
+          "response": []
+        },
+        {
+          "name": "Update PTY session · v2.pty.update",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/pty/{{ptyId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty",
+                "{{ptyId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Update PTY session\n\nUpdate the title or viewport size of one PTY session.\n\nOperation ID: v2.pty.update"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove PTY session · v2.pty.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pty/{{ptyId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty",
+                "{{ptyId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Remove PTY session\n\nTerminate and remove one PTY session.\n\nOperation ID: v2.pty.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Create PTY WebSocket token · v2.pty.connect.token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pty/{{ptyId}}/connect-token?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty",
+                "{{ptyId}}",
+                "connect-token"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Create PTY WebSocket token\n\nCreate a short-lived single-use ticket for opening a PTY WebSocket connection.\n\nOperation ID: v2.pty.connect.token"
+          },
+          "response": []
+        },
+        {
+          "name": "Connect to PTY session · v2.pty.connect",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/pty/{{ptyId}}/connect",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "pty",
+                "{{ptyId}}",
+                "connect"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "ticket",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Connect to PTY session\n\nEstablish a WebSocket connection streaming PTY output and accepting terminal input.\n\nOperation ID: v2.pty.connect"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "21 Shell 任务",
+      "description": "shell API，共 6 个接口。",
+      "item": [
+        {
+          "name": "List running shell commands · v2.shell.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/shell?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shell"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List running shell commands\n\nList currently running shell commands for a location. Exited commands are not included.\n\nOperation ID: v2.shell.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Run shell command · v2.shell.create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"pwd\",\n  \"cwd\": \"{{directory}}\",\n  \"timeout\": 30000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/shell?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shell"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Run shell command\n\nSpawn one non-interactive shell command for a location. Combined stdout/stderr is captured to a file pageable via output.\n\nOperation ID: v2.shell.create"
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "if (pm.response.code >= 200 && pm.response.code < 300) {",
+                  "  const json = pm.response.json()",
+                  "  const value = json.data?.id ?? json.id",
+                  "  if (value) pm.environment.set('shellId', value)",
+                  "}"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Get shell command · v2.shell.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/shell/{{shellId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shell",
+                "{{shellId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get shell command\n\nGet one shell command, including its status and exit code once exited.\n\nOperation ID: v2.shell.get"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove shell command · v2.shell.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/shell/{{shellId}}?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shell",
+                "{{shellId}}"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Remove shell command\n\nTerminate and remove one shell command and its retained output.\n\nOperation ID: v2.shell.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Update shell timeout · v2.shell.timeout",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timeout\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/shell/{{shellId}}/timeout?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shell",
+                "{{shellId}}",
+                "timeout"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Update shell timeout\n\nReplace a running shell command's timeout from now, or clear it with zero.\n\nOperation ID: v2.shell.timeout"
+          },
+          "response": []
+        },
+        {
+          "name": "Read shell output · v2.shell.output",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/shell/{{shellId}}/output?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "shell",
+                "{{shellId}}",
+                "output"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "cursor",
+                  "value": "example",
+                  "disabled": true
+                },
+                {
+                  "key": "limit",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Read shell output\n\nPage through captured combined output by absolute byte cursor.\n\nOperation ID: v2.shell.output"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "22 引用",
+      "description": "reference API，共 1 个接口。",
+      "item": [
+        {
+          "name": "List references · v2.reference.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/reference?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "reference"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List references\n\nList references available in the requested location.\n\nOperation ID: v2.reference.list"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "23 Git Worktree",
+      "description": "worktree API，共 4 个接口。",
+      "item": [
+        {
+          "name": "List worktrees · v2.worktree.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/project/{{projectId}}/worktree",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "project",
+                "{{projectId}}",
+                "worktree"
+              ]
+            },
+            "description": "List worktrees\n\nList known local worktrees for a project.\n\nOperation ID: v2.worktree.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Create worktree · v2.worktree.create",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"example\",\n  \"directory\": \"{{directory}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/project/{{projectId}}/worktree",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "project",
+                "{{projectId}}",
+                "worktree"
+              ]
+            },
+            "description": "Create worktree\n\nCreate a worktree for a project.\n\nOperation ID: v2.worktree.create"
+          },
+          "response": []
+        },
+        {
+          "name": "Remove worktree · v2.worktree.remove",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directory\": \"{{directory}}\",\n  \"force\": true\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/project/{{projectId}}/worktree",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "project",
+                "{{projectId}}",
+                "worktree"
+              ]
+            },
+            "description": "Remove worktree\n\nRemove a managed worktree from a project.\n\nOperation ID: v2.worktree.remove"
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh worktrees · v2.worktree.refresh",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/project/{{projectId}}/worktree/refresh",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "project",
+                "{{projectId}}",
+                "worktree",
+                "refresh"
+              ]
+            },
+            "description": "Refresh worktrees\n\nReconcile stored worktrees with the project repositories.\n\nOperation ID: v2.worktree.refresh"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "24 版本控制",
+      "description": "vcs API，共 3 个接口。",
+      "item": [
+        {
+          "name": "VCS info · v2.vcs.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vcs?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vcs"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "VCS info\n\nGet current and default branch information for the requested location.\n\nOperation ID: v2.vcs.get"
+          },
+          "response": []
+        },
+        {
+          "name": "VCS status · v2.vcs.status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vcs/status?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vcs",
+                "status"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "VCS status\n\nList uncommitted working-copy changes relative to the requested location.\n\nOperation ID: v2.vcs.status"
+          },
+          "response": []
+        },
+        {
+          "name": "VCS diff · v2.vcs.diff",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/vcs/diff?location%5Bdirectory%5D={{directory}}&mode=working",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "vcs",
+                "diff"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "mode",
+                  "value": "working",
+                  "disabled": false
+                },
+                {
+                  "key": "context",
+                  "value": "example",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "VCS diff\n\nDiff the working copy against HEAD (mode git) or the default-branch merge base (mode branch) for the requested location.\n\nOperation ID: v2.vcs.diff"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "25 网络搜索",
+      "description": "websearch API，共 2 个接口。",
+      "item": [
+        {
+          "name": "List web search providers · v2.websearch.providers",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/websearch/provider?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "websearch",
+                "provider"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "List web search providers\n\nReturn the registered web search providers.\n\nOperation ID: v2.websearch.providers"
+          },
+          "response": []
+        },
+        {
+          "name": "Search the web · v2.websearch.query",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"OpenCode V2\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/websearch?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "websearch"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Search the web\n\nRun one web search through the selected provider. Specify a provider to override the configured default.\n\nOperation ID: v2.websearch.query"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "26 配置",
+      "description": "config API，共 1 个接口。",
+      "item": [
+        {
+          "name": "Get configuration · v2.config.get",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/config?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "config"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Get configuration\n\nReturn configuration documents and discovery sources for the requested location, from lowest to highest priority.\n\nOperation ID: v2.config.get"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "27 调试",
+      "description": "debug API，共 2 个接口。",
+      "item": [
+        {
+          "name": "List loaded locations · v2.debug.location.list",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/debug/location",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "debug",
+                "location"
+              ]
+            },
+            "description": "List loaded locations\n\nList locations currently loaded by the server.\n\nOperation ID: v2.debug.location.list"
+          },
+          "response": []
+        },
+        {
+          "name": "Evict a loaded location · v2.debug.location.evict",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/debug/location?location%5Bdirectory%5D={{directory}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "debug",
+                "location"
+              ],
+              "query": [
+                {
+                  "key": "location[directory]",
+                  "value": "{{directory}}",
+                  "disabled": false
+                },
+                {
+                  "key": "location[workspace]",
+                  "value": "{{workspaceId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Evict a loaded location\n\nDispose the requested location's cached services so its next use boots them fresh.\n\nOperation ID: v2.debug.location.evict"
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "28 数据迁移",
+      "description": "migration API，共 1 个接口。",
+      "item": [
+        {
+          "name": "Get V1 migration status · v2.experimental.migration.v1.status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/api/experimental/migration/v1",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "experimental",
+                "migration",
+                "v1"
+              ]
+            },
+            "description": "Get V1 migration status\n\nReturn the progress of the V1 to V2 session history migration.\n\nOperation ID: v2.experimental.migration.v1.status"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
