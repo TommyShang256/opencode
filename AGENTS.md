@@ -2,9 +2,9 @@
 - Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk` composes Client, Core, and Server.
 - Current implementation changes belong in `packages/core`, `packages/cli`, `packages/server`, `packages/protocol`, `packages/schema`, and related generated client surfaces when required.
 - This repository does not use Changesets. Do not add `.changeset` files; follow the existing release workflow instead.
-- The default branch in this repo is `v2`.
-- Base all new branches and worktrees on `v2`, or `origin/v2` when the local `v2` ref is unavailable. Do not base them on `dev`.
-- Local `main` ref may not exist; use `v2` or `origin/v2` for diffs.
+- The GitHub default and only custom development branch is `dataagent-v2`.
+- Keep `v2` as the pinned upstream snapshot. Do not fetch or merge upstream routinely; update `v2` and merge it into `dataagent-v2` only when the user explicitly requests synchronization.
+- Commit DataAgent custom work directly to `dataagent-v2`. Use `v2` or `origin/v2` only for upstream diffs and synchronization.
 
 ## Live V2 TUI Testing
 
@@ -27,11 +27,9 @@
 - If the theme does not expose a token for the required semantic role, extend the theme schema, defaults, resolution, and types with that role before using it in a component. Do not repurpose the nearest-looking existing token.
 - When changing the public theme token surface, verify the built-in light and dark defaults and the custom-theme fallback path in addition to the affected TUI component.
 
-## Branch Names
+## Branch Policy
 
-Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
-
-Examples: `session-recovery`, `fix-scroll-state`, `regenerate-sdk`.
+Use only `v2` and `dataagent-v2`. Do not create feature, task, backup, merge, or worktree branches unless the user explicitly requests one.
 
 ## Commits and PR Titles
 
