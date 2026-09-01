@@ -50,6 +50,13 @@ export class OAuthConfig extends Schema.Class<OAuthConfig>("Mcp.OAuthConfig")({
   }),
 }) {}
 
+export const ClientInfo = Schema.Struct({
+  name: Schema.String,
+  version: Schema.String,
+  title: Schema.String.pipe(optional),
+}).annotate({ identifier: "Mcp.ClientInfo" })
+export type ClientInfo = typeof ClientInfo.Type
+
 export class RemoteConfig extends Schema.Class<RemoteConfig>("Mcp.RemoteConfig")({
   type: Schema.Literal("remote"),
   url: Schema.String,
@@ -61,6 +68,9 @@ export class RemoteConfig extends Schema.Class<RemoteConfig>("Mcp.RemoteConfig")
   }),
   timeout: TimeoutConfig.pipe(optional),
   protocol: Protocol.pipe(optional),
+  clientInfo: ClientInfo.pipe(optional).annotate({
+    description: "Client identity sent to this server during the MCP initialize handshake.",
+  }),
 }) {}
 
 export const ServerConfig = Schema.Union([LocalConfig, RemoteConfig]).pipe(Schema.toTaggedUnion("type"))
@@ -142,3 +152,31 @@ export const ResourceContent = Schema.Struct({
   uri: Schema.String,
   contents: Schema.Array(ResourceContentPart),
 }).annotate({ identifier: "Mcp.ResourceContent" })
+
+export const ToolInfo = Schema.Struct({
+  server: Schema.String,
+  name: Schema.String,
+  codemode: Schema.Boolean.pipe(optional),
+  description: Schema.String.pipe(optional),
+  inputSchema: Schema.Unknown.pipe(optional),
+  outputSchema: Schema.Unknown.pipe(optional),
+}).annotate({ identifier: "Mcp.ToolInfo" })
+export type ToolInfo = typeof ToolInfo.Type
+
+// ---- MCP Tool Bridge wire types (POST /api/mcp/:server/tool/:tool/call) ----
+
+export const ToolCallContent = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("media"), data: Schema.String, mimeType: Schema.String }),
+]).pipe(Schema.toTaggedUnion("type"), Schema.annotate({ identifier: "Mcp.ToolCallContent" }))
+export type ToolCallContent = typeof ToolCallContent.Type
+
+/** Wire result of an MCP tool call via the bridge endpoint. */
+export interface ToolCallResult extends Schema.Schema.Type<typeof ToolCallResult> {}
+export const ToolCallResult = Schema.Struct({
+  server: Schema.String,
+  tool: Schema.String,
+  isError: Schema.Boolean,
+  structured: Schema.Unknown.pipe(optional),
+  content: Schema.Array(ToolCallContent),
+}).annotate({ identifier: "Mcp.ToolCallResult" })

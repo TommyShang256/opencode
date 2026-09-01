@@ -100,3 +100,10 @@ export type Info<
   readonly output?: Output
   readonly options?: Options
 }
+
+export interface Definition extends Schema.Schema.Type<typeof Definition> {}
+export const Definition = Schema.Struct({
+  name: Schema.String,
+  description: Schema.String,
+  parameters: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({ identifier: "Tool.Definition" })

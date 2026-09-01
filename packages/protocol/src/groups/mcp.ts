@@ -1,8 +1,15 @@
 import { Mcp } from "@opencode/schema/mcp"
+import { Agent } from "@opencode/schema/agent"
 import { Location } from "@opencode/schema/location"
+import { Session } from "@opencode/schema/session"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
-import { McpServerNotFoundError } from "../errors.js"
+import {
+  McpServerNotFoundError,
+  PermissionDeniedError,
+  ServiceUnavailableError,
+  SessionNotFoundError,
+} from "../errors.js"
 import { LocationQuery, locationQueryOpenApi } from "./location.js"
 
 export const McpGroup = HttpApiGroup.make("server.mcp")
@@ -97,6 +104,44 @@ export const McpGroup = HttpApiGroup.make("server.mcp")
           identifier: "mcp.resource.catalog",
           summary: "List MCP resources",
           description: "Retrieve resources and resource templates from connected MCP servers.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.get("mcp.tools.list", "/api/mcp/:server/tools", {
+      params: { server: Schema.String },
+      query: LocationQuery,
+      success: Location.response(Schema.Array(Mcp.ToolInfo)),
+      error: McpServerNotFoundError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.mcp.tools.list",
+          summary: "List MCP tools",
+          description: "List the tools exposed by one configured MCP server.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.post("mcp.tool.call", "/api/mcp/:server/tool/:tool/call", {
+      params: { server: Schema.String, tool: Schema.String },
+      query: LocationQuery,
+      payload: Schema.Struct({
+        arguments: Schema.Record(Schema.String, Schema.Unknown),
+        sessionId: Session.ID.pipe(Schema.optional),
+        agent: Agent.ID.pipe(Schema.optional),
+      }),
+      success: Mcp.ToolCallResult,
+      error: [McpServerNotFoundError, PermissionDeniedError, ServiceUnavailableError, SessionNotFoundError],
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.mcp.tool.call",
+          summary: "Call MCP tool",
+          description:
+            "Invoke a tool on a connected MCP server (Tool Bridge). Subject to the same permission rules as LLM-invoked MCP tools.",
         }),
       ),
   )

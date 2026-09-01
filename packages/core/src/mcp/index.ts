@@ -423,13 +423,15 @@ export const layer = (options?: Options) =>
           const { McpClient } = yield* Effect.promise(() => import("./client.js"))
           // List tools as part of connect so a failure here marks the server failed rather than
           // leaving it connected with a silently empty tool list and no path to recover.
+          const clientInfo =
+            entry.config.type === "remote" && entry.config.clientInfo ? entry.config.clientInfo : options?.clientInfo
           const load = McpClient.connect(
             name,
             entry.config,
             location.directory,
             authProvider,
             elicitation,
-            options?.clientInfo,
+            clientInfo,
           ).pipe(
             Effect.flatMap((connection) => connection.tools().pipe(Effect.map((tools) => ({ connection, tools })))),
             // A stdio server is spawned on this location's execution plane, not the host's.

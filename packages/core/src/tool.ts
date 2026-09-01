@@ -41,6 +41,12 @@ type Data = {
 export interface Interface extends State.Transformable<Editor> {
   readonly list: () => Effect.Effect<ReadonlyArray<Tool.Info & { readonly id: string }>>
   readonly snapshot: (permissions?: Permission.Ruleset) => Effect.Effect<Snapshot>
+  /**
+   * Operational inventory of every registered tool: the latest registration per effective
+   * name, unfiltered by permissions and without CodeMode aggregation (that is the LLM-facing
+   * `snapshot` view). Names match what `snapshot` would expose for direct tools.
+   */
+  readonly catalog: () => Effect.Effect<ReadonlyArray<Tool.Definition>>
 }
 
 /** A local execution result after hooks and content normalization. */
@@ -222,6 +228,15 @@ const layer = Layer.effect(
       transform: state.transform,
       reload: state.reload,
       list: () => Effect.sync(() => Array.from(state.get().tools.values())),
+      catalog: () =>
+        Effect.sync(() =>
+          Array.from(state.get().tools.values())
+            .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
+            .map((tool) => {
+              const value = definition(tool)
+              return { name: value.name, description: value.description, parameters: value.inputSchema }
+            }),
+        ),
       snapshot: Effect.fn("Tool.snapshot")((permissions) =>
         Effect.sync(() => {
           const data = state.get()
