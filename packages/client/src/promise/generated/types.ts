@@ -71,6 +71,12 @@ export type PromptFileSource = { type: "inline" } | { type: "uri"; uri: string }
 
 export type PromptMention = { start: number; end: number; text: string }
 
+export type PromptClientTool = {
+  name: "present_artifact"
+  description: string
+  inputSchema: { [x: string]: JsonValue }
+}
+
 export type SessionMessageSynthetic = {
   id: string
   metadata?: { [x: string]: JsonValue }
@@ -120,6 +126,8 @@ export type SessionMessageToolStateRunning = {
   input: { [x: string]: JsonValue }
   metadata: { [x: string]: JsonValue }
 }
+
+export type SessionMessageToolStateWaitingClient = { status: "waiting-client"; input: { [x: string]: JsonValue } }
 
 export type ToolTextContent = { type: "text"; text: string }
 
@@ -185,6 +193,8 @@ export type SessionMessageToolStateRunning1 = {
   input: { [x: string]: any }
   metadata: { [x: string]: JsonValue }
 }
+
+export type SessionMessageToolStateWaitingClient1 = { status: "waiting-client"; input: { [x: string]: any } }
 
 export type EventLogSynced = { type: "log.synced"; aggregateID: string; seq?: number }
 
@@ -305,6 +315,17 @@ export type McpResourceTemplate = {
   mimeType?: string
 }
 
+export type McpToolInfo = {
+  server: string
+  name: string
+  codemode?: boolean
+  description?: string
+  inputSchema: JsonValue
+  outputSchema: JsonValue
+}
+
+export type McpToolCallContent = { type: "text"; text: string } | { type: "media"; data: string; mimeType: string }
+
 export type ProjectVcs = string
 
 export type ProjectIcon = { url?: string; override?: string; color?: string }
@@ -338,6 +359,8 @@ export type SkillInfo = {
 }
 
 export type RpcOutput = { output?: any }
+
+export type ToolDefinition = { name: string; description: string; parameters: { [x: string]: JsonValue } }
 
 export type PermissionReply = "once" | "always" | "reject"
 
@@ -439,6 +462,8 @@ export type VcsBranchList = Array<string>
 export type WebSearchProvider = { id: string; name: string }
 
 export type WebSearchResult = { url: string; title?: string; content?: string; time: { published?: number } }
+
+export type McpClientInfo = { name: string; version: string; title?: string }
 
 export type ProviderRequest = {
   settings: ProviderSettings
@@ -708,6 +733,16 @@ export type SessionExecutionInterrupted = {
   data: { sessionID: string; reason: "user" | "shutdown" | "superseded" }
 }
 
+export type SessionExecutionSuspended = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.execution.suspended"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; reason: "client-tool" }
+}
+
 export type SessionInstructionsUpdated = {
   id: string
   created: number
@@ -786,6 +821,16 @@ export type SessionToolInputEnded = {
   durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
   data: { sessionID: string; assistantMessageID: string; id: string; text: string }
+}
+
+export type SessionToolWaitingClient = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.tool.waiting-client"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; assistantMessageID: string; id: string }
 }
 
 export type SessionRetryScheduled = {
@@ -1460,6 +1505,14 @@ export type McpServer = {
 
 export type McpResourceCatalog = { resources: Array<McpResource>; templates: Array<McpResourceTemplate> }
 
+export type McpToolCallResult = {
+  server: string
+  tool: string
+  isError: boolean
+  structured: JsonValue
+  content: Array<McpToolCallContent>
+}
+
 export type Project = {
   id: string
   canonical: string
@@ -1705,6 +1758,7 @@ export type SessionMessageUser = {
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
+  clientTools?: Array<PromptClientTool>
   type: "user"
 }
 
@@ -1713,6 +1767,7 @@ export type SessionInboxUserPayload = {
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
+  clientTools?: Array<PromptClientTool>
   metadata?: { [x: string]: JsonValue }
 }
 
@@ -1721,6 +1776,7 @@ export type SessionInboxUserPayload1 = {
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
   skills?: Array<PromptSkillAttachment>
+  clientTools?: Array<PromptClientTool>
   metadata?: { [x: string]: any }
 }
 
@@ -1967,6 +2023,7 @@ export type ConfigEntry =
                   disabled?: boolean
                   codemode?: boolean
                   timeout?: { startup?: number; catalog?: number; execution?: number }
+                  clientInfo?: McpClientInfo
                 }
           }
         }
@@ -2073,6 +2130,7 @@ export type SessionMessageAssistantTool = {
   state:
     | SessionMessageToolStateStreaming
     | SessionMessageToolStateRunning
+    | SessionMessageToolStateWaitingClient
     | SessionMessageToolStateCompleted
     | SessionMessageToolStateError
   time: { created: number; ran?: number; completed?: number }
@@ -2088,6 +2146,7 @@ export type SessionMessageAssistantTool1 = {
   state:
     | SessionMessageToolStateStreaming
     | SessionMessageToolStateRunning1
+    | SessionMessageToolStateWaitingClient1
     | SessionMessageToolStateCompleted1
     | SessionMessageToolStateError1
   time: { created: number; ran?: number; completed?: number }
@@ -2201,6 +2260,7 @@ export type SessionEventDurable =
   | SessionExecutionSucceeded
   | SessionExecutionFailed
   | SessionExecutionInterrupted
+  | SessionExecutionSuspended
   | SessionInstructionsUpdated
   | SessionSynthetic
   | SessionSkillActivated
@@ -2217,6 +2277,7 @@ export type SessionEventDurable =
   | SessionToolInputStarted
   | SessionToolInputEnded
   | SessionToolCalled
+  | SessionToolWaitingClient
   | SessionToolSuccess
   | SessionToolFailed
   | SessionRetryScheduled
@@ -2261,6 +2322,7 @@ export type V2Event =
   | SessionExecutionSucceeded
   | SessionExecutionFailed
   | SessionExecutionInterrupted
+  | SessionExecutionSuspended
   | SessionInstructionsUpdated
   | SessionSynthetic
   | SessionSkillActivated
@@ -2280,6 +2342,7 @@ export type V2Event =
   | SessionToolInputDelta
   | SessionToolInputEnded
   | SessionToolCalled
+  | SessionToolWaitingClient
   | SessionToolProgress
   | SessionToolSuccess
   | SessionToolFailed
@@ -2391,6 +2454,14 @@ export type MessageNotFoundError = {
 export const isMessageNotFoundError = (value: unknown): value is MessageNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "MessageNotFoundError"
 
+export type SessionBusyError = {
+  readonly _tag: "SessionBusyError"
+  readonly sessionID: string
+  readonly message: string
+}
+export const isSessionBusyError = (value: unknown): value is SessionBusyError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionBusyError"
+
 export type CommandNotFoundError = {
   readonly _tag: "CommandNotFoundError"
   readonly command: string
@@ -2423,14 +2494,6 @@ export type ServiceUnavailableError = {
 export const isServiceUnavailableError = (value: unknown): value is ServiceUnavailableError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ServiceUnavailableError"
 
-export type SessionBusyError = {
-  readonly _tag: "SessionBusyError"
-  readonly sessionID: string
-  readonly message: string
-}
-export const isSessionBusyError = (value: unknown): value is SessionBusyError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "SessionBusyError"
-
 export type InstructionEntryValueTooLargeError = {
   readonly _tag: "InstructionEntryValueTooLargeError"
   readonly actualBytes: number
@@ -2458,6 +2521,14 @@ export type McpServerNotFoundError = {
 }
 export const isMcpServerNotFoundError = (value: unknown): value is McpServerNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "McpServerNotFoundError"
+
+export type PermissionDeniedError = {
+  readonly _tag: "PermissionDeniedError"
+  readonly message: string
+  readonly permission?: string | undefined
+}
+export const isPermissionDeniedError = (value: unknown): value is PermissionDeniedError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionDeniedError"
 
 export type ProjectNotFoundError = {
   readonly _tag: "ProjectNotFoundError"
@@ -2879,6 +2950,11 @@ export type SessionImportInput = {
             readonly text?: string
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
           }>
+          readonly clientTools?: ReadonlyArray<{
+            readonly name: "present_artifact"
+            readonly description: string
+            readonly inputSchema: { readonly [x: string]: JsonValue }
+          }>
           readonly type: "user"
         }
       | {
@@ -2951,6 +3027,7 @@ export type SessionImportInput = {
                       readonly input: { readonly [x: string]: JsonValue }
                       readonly metadata: { readonly [x: string]: JsonValue }
                     }
+                  | { readonly status: "waiting-client"; readonly input: { readonly [x: string]: JsonValue } }
                   | {
                       readonly status: "completed"
                       readonly input: { readonly [x: string]: JsonValue }
@@ -3156,6 +3233,11 @@ export type SessionImportInput = {
             readonly text?: string
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
           }>
+          readonly clientTools?: ReadonlyArray<{
+            readonly name: "present_artifact"
+            readonly description: string
+            readonly inputSchema: { readonly [x: string]: JsonValue }
+          }>
           readonly type: "user"
         }
       | {
@@ -3228,6 +3310,7 @@ export type SessionImportInput = {
                       readonly input: { readonly [x: string]: JsonValue }
                       readonly metadata: { readonly [x: string]: JsonValue }
                     }
+                  | { readonly status: "waiting-client"; readonly input: { readonly [x: string]: JsonValue } }
                   | {
                       readonly status: "completed"
                       readonly input: { readonly [x: string]: JsonValue }
@@ -3433,6 +3516,11 @@ export type SessionImportInput = {
             readonly text?: string
             readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
           }>
+          readonly clientTools?: ReadonlyArray<{
+            readonly name: "present_artifact"
+            readonly description: string
+            readonly inputSchema: { readonly [x: string]: JsonValue }
+          }>
           readonly type: "user"
         }
       | {
@@ -3505,6 +3593,7 @@ export type SessionImportInput = {
                       readonly input: { readonly [x: string]: JsonValue }
                       readonly metadata: { readonly [x: string]: JsonValue }
                     }
+                  | { readonly status: "waiting-client"; readonly input: { readonly [x: string]: JsonValue } }
                   | {
                       readonly status: "completed"
                       readonly input: { readonly [x: string]: JsonValue }
@@ -3704,6 +3793,11 @@ export type SessionPromptInput = {
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
+    }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
     readonly resume?: boolean | null
@@ -3724,6 +3818,11 @@ export type SessionPromptInput = {
     readonly skills?: ReadonlyArray<{
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
+    }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
@@ -3746,6 +3845,11 @@ export type SessionPromptInput = {
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
+    }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
     readonly resume?: boolean | null
@@ -3766,6 +3870,11 @@ export type SessionPromptInput = {
     readonly skills?: ReadonlyArray<{
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
+    }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
@@ -3788,10 +3897,41 @@ export type SessionPromptInput = {
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
+    }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
     readonly resume?: boolean | null
   }["skills"]
+  readonly clientTools?: {
+    readonly id?: string | null
+    readonly text: string
+    readonly files?: ReadonlyArray<{
+      readonly uri: string
+      readonly name?: string
+      readonly description?: string
+      readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
+    }>
+    readonly agents?: ReadonlyArray<{
+      readonly name: string
+      readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
+    }>
+    readonly skills?: ReadonlyArray<{
+      readonly id: string
+      readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
+    }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
+    }>
+    readonly metadata?: { readonly [x: string]: JsonValue }
+    readonly delivery?: ("steer" | "queue") | null
+    readonly resume?: boolean | null
+  }["clientTools"]
   readonly metadata?: {
     readonly id?: string | null
     readonly text: string
@@ -3808,6 +3948,11 @@ export type SessionPromptInput = {
     readonly skills?: ReadonlyArray<{
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
+    }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
     }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
@@ -3830,6 +3975,11 @@ export type SessionPromptInput = {
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
+    }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
     readonly resume?: boolean | null
@@ -3851,6 +4001,11 @@ export type SessionPromptInput = {
       readonly id: string
       readonly mention?: { readonly start: number; readonly end: number; readonly text: string }
     }>
+    readonly clientTools?: ReadonlyArray<{
+      readonly name: "present_artifact"
+      readonly description: string
+      readonly inputSchema: { readonly [x: string]: JsonValue }
+    }>
     readonly metadata?: { readonly [x: string]: JsonValue }
     readonly delivery?: ("steer" | "queue") | null
     readonly resume?: boolean | null
@@ -3858,6 +4013,24 @@ export type SessionPromptInput = {
 }
 
 export type SessionPromptOutput = { data: SessionInboxUser }["data"]
+
+export type SessionClientToolResultsInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly results: {
+    readonly results: readonly [
+      (
+        | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+        | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+      ),
+      ...Array<
+        | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+        | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+      >,
+    ]
+  }["results"]
+}
+
+export type SessionClientToolResultsOutput = void
 
 export type SessionCommandInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
@@ -4200,6 +4373,7 @@ export type SessionMessageUpdateInput = {
                 readonly input: { readonly [x: string]: JsonValue }
                 readonly metadata: { readonly [x: string]: JsonValue }
               }
+            | { readonly status: "waiting-client"; readonly input: { readonly [x: string]: JsonValue } }
             | {
                 readonly status: "completed"
                 readonly input: { readonly [x: string]: JsonValue }
@@ -4555,6 +4729,7 @@ export type McpAddInput = {
           readonly disabled?: boolean
           readonly codemode?: boolean
           readonly timeout?: { readonly startup?: number; readonly catalog?: number; readonly execution?: number }
+          readonly clientInfo?: { readonly name: string; readonly version: string; readonly title?: string }
         }
   }["config"]
 }
@@ -4598,6 +4773,43 @@ export type McpResourceCatalogOutput = {
   location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
   data: McpResourceCatalog
 }
+
+export type McpToolsListInput = {
+  readonly server: { readonly server: string }["server"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type McpToolsListOutput = {
+  location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
+  data: Array<McpToolInfo>
+}
+
+export type McpToolCallInput = {
+  readonly server: { readonly server: string; readonly tool: string }["server"]
+  readonly tool: { readonly server: string; readonly tool: string }["tool"]
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+  readonly arguments: {
+    readonly arguments: { readonly [x: string]: unknown }
+    readonly sessionId?: string | undefined
+    readonly agent?: string | undefined
+  }["arguments"]
+  readonly sessionId?: {
+    readonly arguments: { readonly [x: string]: unknown }
+    readonly sessionId?: string | undefined
+    readonly agent?: string | undefined
+  }["sessionId"]
+  readonly agent?: {
+    readonly arguments: { readonly [x: string]: unknown }
+    readonly sessionId?: string | undefined
+    readonly agent?: string | undefined
+  }["agent"]
+}
+
+export type McpToolCallOutput = McpToolCallResult
 
 export type CredentialUpdateInput = {
   readonly credentialID: { readonly credentialID: string }["credentialID"]
@@ -5711,6 +5923,17 @@ export type RpcCallInput = {
 }
 
 export type RpcCallOutput = RpcOutput
+
+export type ToolListInput = {
+  readonly location?: {
+    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  }["location"]
+}
+
+export type ToolListOutput = {
+  location: { directory: string; workspaceID?: string; project: { id: string; directory: string; canonical: string } }
+  data: Array<ToolDefinition>
+}
 
 export type EventSubscribeOutput = V2Event
 

@@ -247,12 +247,31 @@ export type SessionPromptInput = {
   readonly files?: ReadonlyArray<PromptInput.FileAttachment> | undefined
   readonly agents?: ReadonlyArray<AgentAttachment> | undefined
   readonly skills?: ReadonlyArray<PromptInput.SkillAttachment> | undefined
+  readonly clientTools?: ReadonlyArray<PromptInput.ClientTool> | undefined
   readonly metadata?: { readonly [x: string]: unknown } | undefined
   readonly delivery?: SessionInbox.Delivery | undefined
   readonly resume?: boolean | undefined
 }
 export type SessionPromptOutput = SessionInbox.User
 export type SessionPromptOperation<E = never> = (input: SessionPromptInput) => Effect.Effect<SessionPromptOutput, E>
+
+export type SessionClientToolResultsInput = {
+  readonly sessionID: Session.ID
+  readonly results: readonly [
+    (
+      | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+      | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+    ),
+    ...Array<
+      | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+      | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+    >,
+  ]
+}
+export type SessionClientToolResultsOutput = void
+export type SessionClientToolResultsOperation<E = never> = (
+  input: SessionClientToolResultsInput,
+) => Effect.Effect<SessionClientToolResultsOutput, E>
 
 export type SessionCommandInput = {
   readonly sessionID: Session.ID
@@ -586,6 +605,15 @@ export type SessionLogOutput =
           readonly id: Event.ID
           readonly created: number
           readonly metadata?: { readonly [x: string]: unknown } | undefined
+          readonly type: "session.execution.suspended"
+          readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
+          readonly location?: Location.Ref | undefined
+          readonly data: { readonly sessionID: Session.ID; readonly reason: "client-tool" }
+        }
+      | {
+          readonly id: Event.ID
+          readonly created: number
+          readonly metadata?: { readonly [x: string]: unknown } | undefined
           readonly type: "session.instructions.updated"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
           readonly location?: Location.Ref | undefined
@@ -824,6 +852,19 @@ export type SessionLogOutput =
             readonly input: { readonly [x: string]: unknown }
             readonly executed: boolean
             readonly state?: SessionMessage.ProviderState | undefined
+          }
+        }
+      | {
+          readonly id: Event.ID
+          readonly created: number
+          readonly metadata?: { readonly [x: string]: unknown } | undefined
+          readonly type: "session.tool.waiting-client"
+          readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
+          readonly location?: Location.Ref | undefined
+          readonly data: {
+            readonly sessionID: Session.ID
+            readonly assistantMessageID: SessionMessage.ID
+            readonly id: string
           }
         }
       | {
@@ -1077,6 +1118,7 @@ export interface SessionApi<E = never> {
   readonly rename: SessionRenameOperation<E>
   readonly move: SessionMoveOperation<E>
   readonly prompt: SessionPromptOperation<E>
+  readonly clientToolResults: SessionClientToolResultsOperation<E>
   readonly command: SessionCommandOperation<E>
   readonly skill: SessionSkillOperation<E>
   readonly synthetic: SessionSyntheticOperation<E>
@@ -1351,6 +1393,24 @@ export type McpResourceCatalogOperation<E = never> = (
   input?: McpResourceCatalogInput,
 ) => Effect.Effect<McpResourceCatalogOutput, E>
 
+export type McpToolsListInput = {
+  readonly server: string
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+}
+export type McpToolsListOutput = { readonly location: Location.Info; readonly data: ReadonlyArray<Mcp.ToolInfo> }
+export type McpToolsListOperation<E = never> = (input: McpToolsListInput) => Effect.Effect<McpToolsListOutput, E>
+
+export type McpToolCallInput = {
+  readonly server: string
+  readonly tool: string
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  readonly arguments: { readonly [x: string]: unknown }
+  readonly sessionId?: Session.ID | undefined
+  readonly agent?: Agent.ID | undefined
+}
+export type McpToolCallOutput = Mcp.ToolCallResult
+export type McpToolCallOperation<E = never> = (input: McpToolCallInput) => Effect.Effect<McpToolCallOutput, E>
+
 export interface McpApi<E = never> {
   readonly list: McpListOperation<E>
   readonly add: McpAddOperation<E>
@@ -1358,6 +1418,8 @@ export interface McpApi<E = never> {
   readonly connect: McpConnectOperation<E>
   readonly disconnect: McpDisconnectOperation<E>
   readonly resource: { readonly catalog: McpResourceCatalogOperation<E> }
+  readonly tools: { readonly list: McpToolsListOperation<E> }
+  readonly tool: { readonly call: McpToolCallOperation<E> }
 }
 
 export type CredentialUpdateInput = {
@@ -1584,6 +1646,23 @@ export type RpcCallOperation<E = never> = (input: RpcCallInput) => Effect.Effect
 
 export interface RpcApi<E = never> {
   readonly call: RpcCallOperation<E>
+}
+
+export type ToolListInput = {
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+}
+export type ToolListOutput = {
+  readonly location: Location.Info
+  readonly data: ReadonlyArray<{
+    readonly name: string
+    readonly description: string
+    readonly parameters: { readonly [x: string]: unknown }
+  }>
+}
+export type ToolListOperation<E = never> = (input?: ToolListInput) => Effect.Effect<ToolListOutput, E>
+
+export interface ToolApi<E = never> {
+  readonly list: ToolListOperation<E>
 }
 
 export type EventSubscribeOutput = OpenCodeEvent
@@ -2087,6 +2166,7 @@ export interface AppApi<E = never> {
   readonly command: CommandApi<E>
   readonly skill: SkillApi<E>
   readonly rpc: RpcApi<E>
+  readonly tool: ToolApi<E>
   readonly event: EventApi<E>
   readonly pty: PtyApi<E>
   readonly experimental: ExperimentalApi<E>

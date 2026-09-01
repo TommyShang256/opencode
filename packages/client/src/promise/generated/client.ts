@@ -36,6 +36,8 @@ import type {
   SessionMoveOutput,
   SessionPromptInput,
   SessionPromptOutput,
+  SessionClientToolResultsInput,
+  SessionClientToolResultsOutput,
   SessionCommandInput,
   SessionCommandOutput,
   SessionSkillInput,
@@ -132,6 +134,10 @@ import type {
   McpDisconnectOutput,
   McpResourceCatalogInput,
   McpResourceCatalogOutput,
+  McpToolsListInput,
+  McpToolsListOutput,
+  McpToolCallInput,
+  McpToolCallOutput,
   CredentialUpdateInput,
   CredentialUpdateOutput,
   CredentialActivateInput,
@@ -183,6 +189,8 @@ import type {
   SkillListOutput,
   RpcCallInput,
   RpcCallOutput,
+  ToolListInput,
+  ToolListOutput,
   EventSubscribeOutput,
   PtyListInput,
   PtyListOutput,
@@ -655,6 +663,7 @@ export function make(options: ClientOptions) {
               files: input["files"],
               agents: input["agents"],
               skills: input["skills"],
+              clientTools: input["clientTools"],
               metadata: input["metadata"],
               delivery: input["delivery"],
               resume: input["resume"],
@@ -665,6 +674,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      clientToolResults: (input: SessionClientToolResultsInput, requestOptions?: RequestOptions) =>
+        request<SessionClientToolResultsOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/client-tool-results`,
+            body: { results: input["results"] },
+            successStatus: 204,
+            declaredStatuses: [409, 404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       command: (input: SessionCommandInput, requestOptions?: RequestOptions) =>
         request<SessionCommandOutput>(
           {
@@ -1279,6 +1300,35 @@ export function make(options: ClientOptions) {
             requestOptions,
           ),
       },
+      tools: {
+        list: (input: McpToolsListInput, requestOptions?: RequestOptions) =>
+          request<McpToolsListOutput>(
+            {
+              method: "GET",
+              path: `/api/mcp/${encodeURIComponent(input.server)}/tools`,
+              query: { location: input["location"] },
+              successStatus: 200,
+              declaredStatuses: [404, 401, 400],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      tool: {
+        call: (input: McpToolCallInput, requestOptions?: RequestOptions) =>
+          request<McpToolCallOutput>(
+            {
+              method: "POST",
+              path: `/api/mcp/${encodeURIComponent(input.server)}/tool/${encodeURIComponent(input.tool)}/call`,
+              query: { location: input["location"] },
+              body: { arguments: input["arguments"], sessionId: input["sessionId"], agent: input["agent"] },
+              successStatus: 200,
+              declaredStatuses: [404, 403, 503, 401, 400],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
     },
     credential: {
       update: (input: CredentialUpdateInput, requestOptions?: RequestOptions) =>
@@ -1606,6 +1656,20 @@ export function make(options: ClientOptions) {
             body: { input: input["input"] },
             successStatus: 200,
             declaredStatuses: [400, 500, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+    },
+    tool: {
+      list: (input?: ToolListInput, requestOptions?: RequestOptions) =>
+        request<ToolListOutput>(
+          {
+            method: "GET",
+            path: `/api/tool`,
+            query: { location: input?.["location"] },
+            successStatus: 200,
+            declaredStatuses: [401, 400],
             empty: false,
           },
           requestOptions,
