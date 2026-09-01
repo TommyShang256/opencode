@@ -45,7 +45,7 @@ describe("SystemPromptPlugin", () => {
     expect(PROMPT_META).toContain("`edit` for editing")
     expect(PROMPT_META).toContain("`write` for creating files")
     expect(PROMPT_META).toContain("Follow that reminder for the files you may edit")
-    expect(PROMPT_META).toContain("https://opencode.ai/v2/docs/")
+    expect(PROMPT_META).not.toContain("https://opencode.ai/v2/docs/")
     expect(PROMPT_META).not.toMatch(
       /TodoWrite|Task tool|WebFetch|\bBash\b|including planning files|https:\/\/opencode\.ai\/docs/,
     )
@@ -69,9 +69,9 @@ describe("SystemPromptPlugin", () => {
         discard: true,
       })
       const cases = [
-        ["gpt-5", "You are OpenCode, You and the user share the same workspace"],
-        ["gpt-4.1", "You are OpenCode, You and the user share the same workspace"],
-        ["o3", "You are OpenCode, You and the user share the same workspace"],
+        ["gpt-5", "You are dataagent, You and the user share the same workspace"],
+        ["gpt-4.1", "You are dataagent, You and the user share the same workspace"],
+        ["o3", "You are dataagent, You and the user share the same workspace"],
         ["gpt-5-codex", "## Editing constraints"],
         ["gemini-2.5-pro", fallback],
         ["claude-sonnet-4", "# Professional objectivity"],
@@ -113,7 +113,7 @@ describe("SystemPromptPlugin", () => {
             Effect.tap(() =>
               Effect.sync(() => {
                 expect(event.system[0]?.text).toContain(`powered by ${name},`)
-                expect(event.system[0]?.text).toContain(`using Meta ${name}.`)
+                expect(event.system[0]?.text).not.toContain("github.com/anomalyco/opencode")
                 expect(event.system[0]?.text).not.toContain("{{MODEL_NAME}}")
               }),
             ),
@@ -202,7 +202,7 @@ describe("SystemPromptPlugin", () => {
       yield* hooks.trigger("session", "context", physicalCustom)
       yield* hooks.trigger("session", "context", familyOpenAI)
 
-      expect(physicalOpenAI.system[0]?.text).toContain("You are OpenCode, You and the user share the same workspace")
+      expect(physicalOpenAI.system[0]?.text).toContain("You are dataagent, You and the user share the same workspace")
       expect(physicalCustom.system[0]?.text).toBe(fallback)
       expect(familyOpenAI.system[0]?.text).toContain("## Editing constraints")
     }),

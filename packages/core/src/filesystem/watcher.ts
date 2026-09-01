@@ -225,8 +225,39 @@ function subscribeDirectory(
   publish: (update: Update) => void,
 ): Effect.Effect<Subscription | undefined> {
   if (!native || !backend) {
-    return Effect.logError("watcher backend not supported", { directory, platform: process.platform }).pipe(
-      Effect.as(undefined),
+    return Effect.try({
+      try: () => {
+        const ignored = ignore.map((pattern) => {
+          const value = pattern.replaceAll("\\", "/")
+          return { absolute: path.isAbsolute(pattern), value, glob: new Bun.Glob(value) }
+        })
+        const subscription = watch(directory, { recursive: true }, (_event, filename) => {
+          if (!filename) return
+          const relative = filename.toString().replaceAll("\\", "/")
+          const absolute = path.join(directory, filename.toString()).replaceAll("\\", "/")
+          if (
+            ignored.some((pattern) => {
+              const target = pattern.absolute ? absolute : relative
+              return pattern.glob.match(target) || target === pattern.value || target.startsWith(`${pattern.value}/`)
+            })
+          )
+            return
+          publish({ path: path.join(directory, filename.toString()), type: "update" })
+        })
+        subscription.on("error", (error) =>
+          Effect.runFork(Effect.logError("watcher callback failed", { directory, error })),
+        )
+        return { unsubscribe: () => Promise.resolve(subscription.close()), backend: "node" }
+      },
+      catch: (cause) => cause,
+    }).pipe(
+      Effect.catchCause((cause) =>
+        Effect.logError("watcher backend not supported", {
+          directory,
+          platform: process.platform,
+          cause: Cause.pretty(cause),
+        }).pipe(Effect.as(undefined)),
+      ),
     )
   }
   const callback: ParcelWatcher.SubscribeCallback = (error, updates) => {
