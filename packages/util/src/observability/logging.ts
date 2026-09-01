@@ -57,8 +57,9 @@ function format(input: unknown) {
 }
 
 export function file(local = true, channel = "local") {
-  if (!local) return path.join(Global.Path.log, "opencode.log")
-  return path.join(Global.Path.log, `opencode-${channel.replace(/[^a-zA-Z0-9._-]/g, "-")}.log`)
+  const prefix = process.env.OPENCODE_LOG_PREFIX ?? "opencode"
+  if (!local) return path.join(Global.Path.log, `${prefix}.log`)
+  return path.join(Global.Path.log, `${prefix}-${channel.replace(/[^a-zA-Z0-9._-]/g, "-")}.log`)
 }
 
 export function fileLogger(target = file(), id: string = runID()) {

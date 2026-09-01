@@ -90,4 +90,28 @@ describe("global", () => {
     created.forEach((directory) => expect(fs.statSync(directory).isDirectory()).toBe(true))
     fs.rmSync(root, { recursive: true, force: true })
   })
+
+  test("uses a distribution-specific application directory", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "opencode-global-app-name-"))
+    const module = pathToFileURL(path.join(import.meta.dir, "../src/global.ts")).href
+    const result = Bun.spawnSync({
+      cmd: [
+        process.execPath,
+        "-e",
+        `const { Global } = await import(${JSON.stringify(module)}); process.stdout.write(Global.Path.data)`,
+      ],
+      cwd: path.join(import.meta.dir, ".."),
+      env: {
+        ...process.env,
+        OPENCODE_APP_NAME: "dataagent",
+        XDG_DATA_HOME: root,
+      },
+      stdout: "pipe",
+      stderr: "pipe",
+    })
+
+    expect(result.exitCode, result.stderr.toString()).toBe(0)
+    expect(result.stdout.toString()).toBe(path.join(root, "dataagent"))
+    fs.rmSync(root, { recursive: true, force: true })
+  })
 })
