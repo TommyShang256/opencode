@@ -1,0 +1,2355 @@
+{
+  "info": {
+    "name": "DataAgent V2 HTTP API",
+    "description": "Generated from packages/protocol/openapi.json. Contains 141 operations.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "basic",
+    "basic": [
+      {
+        "key": "username",
+        "value": "{{username}}",
+        "type": "string"
+      },
+      {
+        "key": "password",
+        "value": "{{password}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "username",
+      "value": "opencode",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "replace-with-service-password",
+      "type": "string"
+    },
+    {
+      "key": "baseUrl",
+      "value": "http://127.0.0.1:4096",
+      "type": "string"
+    },
+    {
+      "key": "agentID",
+      "value": "build",
+      "type": "string"
+    },
+    {
+      "key": "id",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "projectID",
+      "value": "project_example",
+      "type": "string"
+    },
+    {
+      "key": "directory",
+      "value": "/absolute/path/to/project",
+      "type": "string"
+    },
+    {
+      "key": "sessionID",
+      "value": "ses_example",
+      "type": "string"
+    },
+    {
+      "key": "messageID",
+      "value": "msg_example",
+      "type": "string"
+    },
+    {
+      "key": "providerID",
+      "value": "anthropic",
+      "type": "string"
+    },
+    {
+      "key": "toolCallId",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "inboxID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "key",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "integrationID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "methodID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "attemptID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "server",
+      "value": "example-server",
+      "type": "string"
+    },
+    {
+      "key": "tool",
+      "value": "example-tool",
+      "type": "string"
+    },
+    {
+      "key": "credentialID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "formID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "requestID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "filePath",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "query",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "rpcID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "method",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "ptyID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "workspaceID",
+      "value": "example",
+      "type": "string"
+    },
+    {
+      "key": "mode",
+      "value": "example",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "health",
+      "item": [
+        {
+          "name": "GET /api/health — Check server health",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/health",
+            "description": "Report the owning server process and its application status."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "server",
+      "item": [
+        {
+          "name": "GET /api/server — Get server information",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/server",
+            "description": "Return the URLs that can be used to connect to this server."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "location",
+      "item": [
+        {
+          "name": "GET /api/location — Get location",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/location",
+            "description": "Resolve the requested location or the server default location."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "agent",
+      "item": [
+        {
+          "name": "GET /api/agent — List agents",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agent",
+            "description": "Retrieve currently registered agents."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/agent/{agentID} — Get agent",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/agent/{{agentID}}",
+            "description": "Retrieve a single currently registered agent."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "plugin",
+      "item": [
+        {
+          "name": "GET /api/plugin — List plugins",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/plugin",
+            "description": "Retrieve enabled server plugins and their current status."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "session",
+      "item": [
+        {
+          "name": "GET /api/session — List sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session",
+            "description": "Retrieve sessions in the requested order. Items keep that order across pages; use cursor.next or cursor.previous to move through the ordered list."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session — Create session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session",
+            "description": "Create a session at the requested location.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/stats — Get session statistics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/stats",
+            "description": "Aggregate local session activity, usage, and tool reliability for a time range."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/import — Import session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/import",
+            "description": "Import a projected session transcript at the requested location. If parentID is supplied, the parent session must already exist; import parents before children.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"info\": {\n    \"id\": \"{{id}}\",\n    \"projectID\": \"{{projectID}}\",\n    \"cost\": 1,\n    \"tokens\": {\n      \"input\": 1,\n      \"output\": 1,\n      \"reasoning\": 1,\n      \"cache\": {\n        \"read\": 1,\n        \"write\": 1\n      }\n    },\n    \"time\": {\n      \"created\": 1,\n      \"updated\": 1\n    },\n    \"location\": {\n      \"directory\": \"{{directory}}\"\n    }\n  },\n  \"messages\": [\n    {\n      \"id\": \"{{id}}\",\n      \"time\": {\n        \"created\": 1\n      },\n      \"type\": \"agent-switched\",\n      \"agent\": \"example\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/export — Export session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/export",
+            "description": "Export a complete projected session transcript."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/active — List active sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/active",
+            "description": "Retrieve foreground Session drains currently owned by this OpenCode process. Sessions absent from the result are inactive."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID} — Get session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}",
+            "description": "Retrieve a session by ID."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/session/{sessionID} — Delete session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}",
+            "description": "Delete a session and its child sessions."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/fork — Fork session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/fork",
+            "description": "Create a child session by copying projected history through or before a message boundary.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"boundary\": {\n    \"type\": \"before\",\n    \"messageID\": \"{{messageID}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/agent — Switch session agent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/agent",
+            "description": "Switch the agent used by subsequent provider turns.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"agent\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/model — Switch session model",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/model",
+            "description": "Switch the model used by subsequent provider turns.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"model\": {\n    \"id\": \"{{id}}\",\n    \"providerID\": \"{{providerID}}\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/rename — Rename session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/rename",
+            "description": "Update the session title.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/move — Move session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/move",
+            "description": "Move a session to another project directory, optionally transferring local changes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directory\": \"{{directory}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/prompt — Send message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/prompt",
+            "description": "Durably admit one session input and schedule agent-loop execution unless resume is false.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/client-tool-results — Submit client tool results",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/client-tool-results",
+            "description": "Complete waiting client-owned native tool calls and resume session execution.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"results\": [\n    {\n      \"toolCallId\": \"{{toolCallId}}\",\n      \"status\": \"completed\",\n      \"output\": {}\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/command — Run command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/command",
+            "description": "Execute a slash command callback immediately.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"example\",\n  \"text\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/skill — Activate skill",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/skill",
+            "description": "Activate a skill for a session by appending a skill message and resuming execution.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"skill\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/synthetic — Add synthetic message",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/synthetic",
+            "description": "Durably admit synthetic session input and schedule execution unless resume is false.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"text\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/shell — Run shell command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/shell",
+            "description": "Execute one shell command in the session's working directory. Emits a shell.started event before execution and a shell.ended event with the merged output after.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/compact — Compact session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/compact",
+            "description": "Durably admit a session compaction request. Steers by default: it runs at the next step boundary instead of waiting behind queued prompts.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/wait — Wait for session",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/wait",
+            "description": "Wait for a session agent loop to become idle."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/revert/stage — Stage session revert",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/revert/stage",
+            "description": "Stage or move a reversible session boundary and optionally apply its file changes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"messageID\": \"{{messageID}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/revert/clear — Clear staged revert",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/revert/clear"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/revert/commit — Commit staged revert",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/revert/commit"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/context — Get session context",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/context",
+            "description": "Retrieve the active context messages for a session (all messages after the last compaction)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/inbox — List session inbox",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/inbox",
+            "description": "List durable enqueued session work not yet delivered, ordered by enqueue sequence. Includes user, synthetic, compaction, and move items."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/session/{sessionID}/inbox/{inboxID} — Cancel inbox input",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/inbox/{{inboxID}}",
+            "description": "Cancel an inbox item that has not yet been delivered."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/inbox/{inboxID}/steer — Steer queued item",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/inbox/{{inboxID}}/steer",
+            "description": "Change a queued inbox item to steer delivery and wake session execution."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/inbox/{inboxID}/queue — Queue steered item",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/inbox/{{inboxID}}/queue",
+            "description": "Change a steered inbox item to queued delivery."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/instructions/entries — List instruction entries",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/instructions/entries",
+            "description": "List API-managed instruction entries attached to the session."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/session/{sessionID}/instructions/entries/{key} — Put instruction entry",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/instructions/entries/{{key}}",
+            "description": "Attach or replace one durable instruction entry. Changes announce as updates at the next step boundary.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"value\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/session/{sessionID}/instructions/entries/{key} — Remove instruction entry",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/instructions/entries/{{key}}",
+            "description": "Remove one instruction entry; the removal is announced to the model at the next step boundary."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/generate — Generate text from session context",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/generate",
+            "description": "Generate transient text from the current session context without mutating session history.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/experimental/session/{sessionID}/log — Read the session log",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/session/{{sessionID}}/log",
+            "description": "Experimental durable session event log. Reads events after an exclusive aggregate sequence and continues with live events when follow=true."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/interrupt — Interrupt session execution",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/interrupt",
+            "description": "Interrupt active execution owned by this OpenCode process. Returns interrupted=true when an active execution was interrupted and false for the idle no-op. When continue=true, execution resumes pending steering input and next-in-line control items (manual compaction, moves) while queued prompts remain parked."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/background — Background blocking session tools",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/background",
+            "description": "Move active foreground backgroundable tools for this session into background observation. Idle requests are a no-op."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/message/{messageID} — Get session message",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/message/{{messageID}}",
+            "description": "Retrieve one projected message owned by the Session."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/session/{sessionID}/message/{messageID} — Update assistant message content",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/message/{{messageID}}",
+            "description": "Replace the content of a completed assistant message in an idle session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"content\": [\n    {\n      \"type\": \"text\",\n      \"text\": \"Hello from Postman\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/session/{sessionID}/environment — Set session environment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/environment",
+            "description": "Replace the process environment used by local shell commands for this session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"variables\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/view — View session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/view",
+            "description": "Mark the idle transition observed by the viewer as viewed.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"idle\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/message — Get session messages",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/message",
+            "description": "Retrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "model",
+      "item": [
+        {
+          "name": "GET /api/model — List models",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/model",
+            "description": "Retrieve the current snapshot of available models ordered by release date. The snapshot may precede initial plugin settlement."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/model/default — Get default model",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/model/default",
+            "description": "Retrieve the model used when a session has no explicit model selection."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "generate",
+      "item": [
+        {
+          "name": "POST /api/generate — Generate text",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/generate",
+            "description": "Run one stateless model generation using the server's base configuration and return the assistant text. Uses the base configuration's default model when none is specified.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"prompt\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "provider",
+      "item": [
+        {
+          "name": "GET /api/provider — List providers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/provider",
+            "description": "Retrieve active AI providers so clients can show provider availability and configuration."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/provider/{providerID} — Get provider",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/provider/{{providerID}}",
+            "description": "Retrieve a single AI provider so clients can inspect its availability and endpoint settings."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "integration",
+      "item": [
+        {
+          "name": "GET /api/integration — List integrations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/integration",
+            "description": "Retrieve available integrations and their authentication methods."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/integration/{integrationID} — Get integration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}",
+            "description": "Retrieve one integration and its authentication methods."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/experimental/integration/wellknown — Add wellknown integration",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/experimental/integration/wellknown",
+            "description": "Discover and persist an experimental wellknown integration source.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"url\": \"https://example.com\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/integration/{integrationID}/connect/key — Connect with key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/key",
+            "description": "Run a key authentication method and store the resulting credential.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"key\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/integration/{integrationID}/connect/oauth — Begin OAuth connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/oauth",
+            "description": "Start an OAuth attempt and return the authorization details.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"methodID\": \"{{methodID}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/integration/{integrationID}/connect/oauth/{attemptID} — Get OAuth attempt status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/oauth/{{attemptID}}",
+            "description": "Poll the current status of an OAuth attempt."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/integration/{integrationID}/connect/oauth/{attemptID} — Cancel OAuth connection",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/oauth/{{attemptID}}",
+            "description": "Cancel an OAuth attempt and release its resources."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/integration/{integrationID}/connect/oauth/{attemptID}/complete — Complete OAuth connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/oauth/{{attemptID}}/complete",
+            "description": "Complete a code-based OAuth attempt and store the resulting credential.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/integration/{integrationID}/connect/command — Begin command connection",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/command",
+            "description": "Start a command authentication attempt.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"methodID\": \"{{methodID}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/integration/{integrationID}/connect/command/{attemptID} — Get command attempt status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/command/{{attemptID}}",
+            "description": "Poll the current status and output of a command authentication attempt."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/integration/{integrationID}/connect/command/{attemptID} — Cancel command connection",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/integration/{{integrationID}}/connect/command/{{attemptID}}",
+            "description": "Cancel a command authentication attempt and terminate its process."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "mcp",
+      "item": [
+        {
+          "name": "GET /api/mcp — List MCP servers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/mcp",
+            "description": "Retrieve configured MCP servers and their connection status."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/mcp/{server} — Add MCP server",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/mcp/{{server}}",
+            "description": "Add an MCP server at runtime or replace an existing one, connecting it immediately.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"config\": {\n    \"type\": \"local\",\n    \"command\": [\n      \"example\"\n    ]\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/mcp/{server} — Remove MCP server",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/mcp/{{server}}",
+            "description": "Stop an MCP server and remove it from the runtime set until restart."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/mcp/{server}/connect — Connect MCP server",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/mcp/{{server}}/connect",
+            "description": "Connect an MCP server at runtime, overriding a disabled configuration until restart."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/mcp/{server}/disconnect — Disconnect MCP server",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/mcp/{{server}}/disconnect",
+            "description": "Disconnect an MCP server at runtime, removing its tools until reconnected."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/mcp/resource — List MCP resources",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/mcp/resource",
+            "description": "Retrieve resources and resource templates from connected MCP servers."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/mcp/{server}/tools — List MCP tools",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/mcp/{{server}}/tools",
+            "description": "List the tools exposed by one configured MCP server."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/mcp/{server}/tool/{tool}/call — Call MCP tool",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/mcp/{{server}}/tool/{{tool}}/call",
+            "description": "Invoke a tool on a connected MCP server (Tool Bridge). Subject to the same permission rules as LLM-invoked MCP tools.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"arguments\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "credential",
+      "item": [
+        {
+          "name": "PATCH /api/credential/{credentialID} — Update credential",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/credential/{{credentialID}}",
+            "description": "Update a stored credential label.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"label\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/credential/{credentialID} — Remove credential",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/credential/{{credentialID}}",
+            "description": "Remove a stored integration credential."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/credential/{credentialID}/activate — Activate credential",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/credential/{{credentialID}}/activate",
+            "description": "Activate a stored integration credential."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "project",
+      "item": [
+        {
+          "name": "GET /api/project — List projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/project",
+            "description": "List known projects."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/project/{projectID} — Update project",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/project/{{projectID}}",
+            "description": "Update project display metadata and workspace commands.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/project/current — Get current project",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/project/current",
+            "description": "Resolve the project for the requested location."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "form",
+      "item": [
+        {
+          "name": "GET /api/form/request — List pending form requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/form/request",
+            "description": "Retrieve pending forms for a location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/form — List session forms",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/form",
+            "description": "Retrieve pending forms for a session."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/form — Create session form",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/form",
+            "description": "Create a form for a session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"example\",\n  \"fields\": [\n    {\n      \"key\": \"example\",\n      \"type\": \"string\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/form/{formID} — Get session form",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/form/{{formID}}",
+            "description": "Retrieve a form for a session."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/form/{formID}/state — Get form state",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/form/{{formID}}/state",
+            "description": "Retrieve the current state for a form."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/form/{formID}/reply — Reply to form",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/form/{{formID}}/reply",
+            "description": "Submit an answer to a pending form.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"answer\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/form/{formID}/cancel — Cancel form",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/form/{{formID}}/cancel",
+            "description": "Cancel a pending form."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "permission",
+      "item": [
+        {
+          "name": "GET /api/permission/request — List pending permission requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/permission/request",
+            "description": "Retrieve pending permission requests for a location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/permission/saved — List saved permissions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/permission/saved",
+            "description": "Retrieve saved permissions, optionally filtered by project."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/permission/saved/{id} — Remove saved permission",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/permission/saved/{{id}}",
+            "description": "Remove a saved permission by ID."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/permission — Create permission request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/permission",
+            "description": "Evaluate and, when approval is required, create a permission request for a session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"example\",\n  \"resources\": [\n    \"example\"\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/permission — List session permission requests",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/permission",
+            "description": "Retrieve pending permission requests owned by a session."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/session/{sessionID}/permission/{requestID} — Get permission request",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/permission/{{requestID}}",
+            "description": "Retrieve a pending permission request owned by a session."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/permission/{requestID}/reply — Reply to pending permission request",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/permission/{{requestID}}/reply",
+            "description": "Respond to a pending permission request owned by a session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reply\": \"once\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "filesystem",
+      "item": [
+        {
+          "name": "GET /api/fs/read/* — Read file",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/fs/read/{{filePath}}",
+            "description": "Serve one file relative to the requested location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/fs/list — List directory",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/fs/list",
+            "description": "List direct children of one directory relative to the requested location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/fs/find — Find files",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/fs/find?query={{query}}",
+            "description": "Find recursively ranked filesystem entries relative to the requested location."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "command",
+      "item": [
+        {
+          "name": "GET /api/command — List commands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/command",
+            "description": "Retrieve currently registered commands."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "skill",
+      "item": [
+        {
+          "name": "GET /api/skill — List skills",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/skill",
+            "description": "Retrieve currently registered skills."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "rpc",
+      "item": [
+        {
+          "name": "POST /api/rpc/{rpcID}/{method} — Call a plugin RPC",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/rpc/{{rpcID}}/{{method}}",
+            "description": "Dispatch a method to the currently registered RPC at the requested location.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "tool",
+      "item": [
+        {
+          "name": "GET /api/tool — List tools",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/tool",
+            "description": "Retrieve every currently registered tool (built-in, plugin-injected, and MCP-aggregated) without permission filtering or CodeMode aggregation."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "event",
+      "item": [
+        {
+          "name": "GET /api/event — Subscribe to events",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/event",
+            "description": "Subscribe to native events and plugin RPC events across all server locations. Volatile by contract: a slow consumer overflows and fails the stream, and events during disconnection are missed."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "pty",
+      "item": [
+        {
+          "name": "GET /api/pty — List PTY sessions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/pty",
+            "description": "List PTY sessions for a location, including exited sessions retained until removal."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/pty — Create PTY session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/pty",
+            "description": "Create a pseudo-terminal session for a location.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/pty/{ptyID} — Get PTY session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/pty/{{ptyID}}",
+            "description": "Get one PTY session, including its exit code once exited."
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/pty/{ptyID} — Update PTY session",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/pty/{{ptyID}}",
+            "description": "Update the title or viewport size of one PTY session.",
+            "body": {
+              "mode": "raw",
+              "raw": "{}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/pty/{ptyID} — Remove PTY session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/pty/{{ptyID}}",
+            "description": "Terminate and remove one PTY session."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/pty/{ptyID}/connect-token — Create PTY WebSocket token",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/pty/{{ptyID}}/connect-token",
+            "description": "Create a short-lived single-use ticket for opening a PTY WebSocket connection."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/pty/{ptyID}/connect — Connect to PTY session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/pty/{{ptyID}}/connect",
+            "description": "Establish a WebSocket connection streaming PTY output and accepting terminal input."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "persistentPty",
+      "item": [
+        {
+          "name": "GET /api/experimental/session/{sessionID}/terminal/read — Read the session's most recently controlled terminal",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/session/{{sessionID}}/terminal/read",
+            "description": "Read the last physical rows without changing selection or taking control. Omitted lines uses the live terminal height; larger counts include retained history. Blank rows are preserved. Screen dimensions and cursor remain relative to the live screen. Returns null when no current terminal exists. Selection is server-local and resets on restart. Experimental: may change without compatibility guarantees."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/experimental/session/{sessionID}/terminal — ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/session/{{sessionID}}/terminal"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/experimental/session/{sessionID}/terminal — ",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/experimental/session/{{sessionID}}/terminal",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"args\": [\n    \"example\"\n  ],\n  \"title\": \"example\",\n  \"env\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/experimental/persistent-pty/shutdown — ",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/shutdown"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/experimental/persistent-pty/handoff — ",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/handoff"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/experimental/persistent-pty/{ptyID} — ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/{{ptyID}}"
+          },
+          "response": []
+        },
+        {
+          "name": "PUT /api/experimental/persistent-pty/{ptyID} — ",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/{{ptyID}}",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"size\": {\n    \"cols\": 1,\n    \"rows\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/experimental/persistent-pty/{ptyID} — ",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/{{ptyID}}"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/experimental/persistent-pty/{ptyID}/snapshot — ",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/{{ptyID}}/snapshot"
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/experimental/persistent-pty/{ptyID}/connect-token — ",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/{{ptyID}}/connect-token"
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/experimental/persistent-pty/{ptyID}/connect — Connect to a persistent PTY",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/persistent-pty/{{ptyID}}/connect",
+            "description": "Stream persistent PTY output through the OpenCode server."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "shell",
+      "item": [
+        {
+          "name": "GET /api/shell — List running shell commands",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/shell",
+            "description": "List currently running shell commands for a location. Exited commands are not included."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/shell — Run shell command",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/shell",
+            "description": "Spawn one non-interactive shell command for a location. Combined stdout/stderr is captured to a file pageable via output.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"command\": \"example\",\n  \"timeout\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/shell/{id} — Get shell command",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/shell/{{id}}",
+            "description": "Get one shell command, including its status and exit code once exited."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/shell/{id} — Remove shell command",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/shell/{{id}}",
+            "description": "Terminate and remove one shell command and its retained output."
+          },
+          "response": []
+        },
+        {
+          "name": "PATCH /api/shell/{id}/timeout — Update shell timeout",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/shell/{{id}}/timeout",
+            "description": "Replace a running shell command's timeout from now, or clear it with zero.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"timeout\": 1\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/shell/{id}/output — Read shell output",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/shell/{{id}}/output",
+            "description": "Page through captured combined output by absolute byte cursor."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "reference",
+      "item": [
+        {
+          "name": "GET /api/reference — List references",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/reference",
+            "description": "List references available in the requested location."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "worktree",
+      "item": [
+        {
+          "name": "GET /api/worktree/{projectID} — List worktrees",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/worktree/{{projectID}}",
+            "description": "List known local worktrees for a project."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/worktree/{projectID} — Create worktree",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/worktree/{{projectID}}",
+            "description": "Create a worktree for a project and run its configured setup script.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"strategy\": \"example\",\n  \"directory\": \"{{directory}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/worktree/{projectID} — Remove worktree",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/worktree/{{projectID}}",
+            "description": "Remove a managed worktree from a project.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"directory\": \"{{directory}}\",\n  \"force\": false\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/worktree/{projectID}/refresh — Refresh worktrees",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/worktree/{{projectID}}/refresh",
+            "description": "Reconcile stored worktrees with the project repositories."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "workspace",
+      "item": [
+        {
+          "name": "POST /api/workspace — Create workspace",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/workspace",
+            "description": "Create a logical workspace. A caller-supplied ID is idempotent when retried with the same provider; reusing it with another provider returns a conflict.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider\": \"example\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/workspace/{workspaceID} — Destroy workspace",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/workspace/{{workspaceID}}",
+            "description": "Make a workspace not exist. This operation is idempotent: an already-missing workspace succeeds with `destroyed: false`, while a workspace removed by this request returns `destroyed: true`."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "vcs",
+      "item": [
+        {
+          "name": "GET /api/vcs — VCS info",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/vcs",
+            "description": "Get current and default branch information for the requested location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/vcs/base — VCS review base",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/vcs/base",
+            "description": "Infer a local review base from named branch creation history, or the repository default only when currently on that branch. Returns null before the first commit or when the provider lacks base metadata; ambiguous Git history requires an explicit base on diff requests."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/vcs/status — VCS status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/vcs/status",
+            "description": "List uncommitted working-copy changes relative to the requested location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/vcs/branches — VCS branches",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/vcs/branches",
+            "description": "List local and remote branches available at the requested location."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/vcs/diff — VCS diff",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/vcs/diff?mode={{mode}}",
+            "description": "Diff HEAD to the working copy (working), the base merge-base to the working copy (branch), or the base merge-base to HEAD (committed). Omitting base preserves repository-default comparison; supplying it overrides the comparison without saving it."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "debug",
+      "item": [
+        {
+          "name": "GET /api/debug/location — List loaded locations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/debug/location",
+            "description": "List locations currently loaded by the server."
+          },
+          "response": []
+        },
+        {
+          "name": "DELETE /api/debug/location — Evict a loaded location",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": "{{baseUrl}}/api/debug/location",
+            "description": "Dispose the requested location's cached services so its next use boots them fresh."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "migration",
+      "item": [
+        {
+          "name": "GET /api/experimental/migration/v1 — Get V1 migration status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/experimental/migration/v1",
+            "description": "Return the progress of the V1 to V2 session history migration."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "websearch",
+      "item": [
+        {
+          "name": "GET /api/websearch/provider — List web search providers",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/websearch/provider",
+            "description": "Return the registered web search providers."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/websearch — Search the web",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": "{{baseUrl}}/api/websearch",
+            "description": "Run one web search through the selected provider. Specify a provider to override the configured default.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"query\": \"Hello from Postman\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "config",
+      "item": [
+        {
+          "name": "GET /api/config — Get configuration",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": "{{baseUrl}}/api/config",
+            "description": "Return configuration documents and discovery sources for the requested location, from lowest to highest priority."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}

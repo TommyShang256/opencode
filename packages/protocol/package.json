@@ -22,6 +22,8 @@
   "scripts": {
     "build": "bun run script/build.ts",
     "generate": "bun run script/generate-openapi.ts",
+    "generate:reference": "bun run script/generate-api-reference.ts",
+    "check:reference": "bun run script/generate-api-reference.ts --check",
     "check:generated": "bun run script/generate-openapi.ts --check",
     "typecheck": "tsgo --noEmit"
   },
