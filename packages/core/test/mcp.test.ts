@@ -1176,6 +1176,42 @@ test("loads and reads MCP resources", async () => {
   )
 })
 
+test("uses a remote server client identity instead of the application default", async () => {
+  await Effect.runPromise(
+    Effect.scoped(
+      Effect.gen(function* () {
+        const server = yield* resourceServer()
+        yield* Effect.gen(function* () {
+          const service = yield* Mcp.Service
+          yield* service.tools()
+          expect(server.clientVersion()).toMatchObject({
+            name: "dataagent-browser",
+            version: "2.0.0",
+            title: "DataAgent Browser",
+          })
+        }).pipe(
+          Effect.provide(
+            resourceMcpLayer(
+              new ConfigMCP.Remote({
+                type: "remote",
+                url: server.url,
+                oauth: false,
+                clientInfo: {
+                  name: "dataagent-browser",
+                  version: "2.0.0",
+                  title: "DataAgent Browser",
+                },
+              }),
+              undefined,
+              { clientInfo: { name: "server-default", version: "1.0.0" } },
+            ),
+          ),
+        )
+      }),
+    ),
+  )
+})
+
 test("adds, disconnects, and reconnects MCP servers at runtime", async () => {
   const published: string[] = []
   await Effect.runPromise(

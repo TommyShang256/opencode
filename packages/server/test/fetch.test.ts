@@ -1,9 +1,10 @@
 import { expect } from "bun:test"
 import { createServer } from "node:http"
 import { makeMemoryDriver } from "@opencode-ai/core/environment/index"
+import { Mcp } from "@opencode-ai/core/mcp/index"
 import { Workspace } from "@opencode-ai/core/workspace"
 import { WorkspaceDriver } from "@opencode-ai/core/workspace/driver"
-import { Effect } from "effect"
+import { Effect, Layer, Schedule } from "effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { ServerFetch } from "../src/fetch"
@@ -182,6 +183,135 @@ it.live("applies custom CORS origins to HTTP responses and PTY ticket checks", (
           expect(ticket.status).toBe(allowed ? 404 : 403)
         }),
     )
+  }).pipe(Effect.scoped),
+)
+
+it.live("lists registered tools through the location-scoped capability endpoint", () =>
+  Effect.gen(function* () {
+    const handler = yield* ServerFetch.make(options)
+    yield* ready(handler)
+    const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/tool")))
+
+    expect(response.status).toBe(200)
+    const body = (yield* Effect.promise(() => response.json())) as {
+      location: { directory: string }
+      data: Array<{ name: string; description: string; parameters: Record<string, unknown> }>
+    }
+    expect(body.location.directory).toBe(process.cwd())
+    expect(body.data.length).toBeGreaterThan(0)
+    expect(body.data.some((tool) => tool.name === "read")).toBe(true)
+    expect(body.data.every((tool) => typeof tool.description === "string")).toBe(true)
+    expect(body.data.map((tool) => tool.name)).toEqual(body.data.map((tool) => tool.name).toSorted())
+    expect(new Set(body.data.map((tool) => tool.name)).size).toBe(body.data.length)
+    expect(
+      body.data.every(
+        (tool) =>
+          tool.parameters !== null &&
+          typeof tool.parameters === "object" &&
+          !Array.isArray(tool.parameters) &&
+          Object.keys(tool).toSorted().join(",") === "description,name,parameters",
+      ),
+    ).toBe(true)
+  }).pipe(Effect.scoped),
+)
+
+it.live("lists tools for one MCP server without executing them", () =>
+  Effect.gen(function* () {
+    const mcp = Layer.mock(Mcp.Service, {
+      servers: () =>
+        Effect.succeed([new Mcp.ServerInfo({ name: Mcp.ServerName.make("demo"), status: { status: "connected" } })]),
+      tools: () =>
+        Effect.succeed([
+          new Mcp.Tool({
+            server: Mcp.ServerName.make("demo"),
+            name: "search",
+            description: "Search data",
+            inputSchema: { type: "object", properties: { query: { type: "string" } } },
+          }),
+          new Mcp.Tool({ server: Mcp.ServerName.make("other"), name: "ignored" }),
+        ]),
+    })
+    const handler = yield* ServerFetch.make(options, { overrides: [Mcp.node.replace(mcp)] })
+    const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/mcp/demo/tools")))
+
+    expect(response.status).toBe(200)
+    expect(yield* Effect.promise(() => response.json())).toMatchObject({
+      data: [{ server: "demo", name: "search", description: "Search data" }],
+    })
+    const missing = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/mcp/missing/tools")))
+    expect(missing.status).toBe(404)
+  }).pipe(Effect.scoped),
+)
+
+it.live("resumes an MCP bridge call after a one-time approval", () =>
+  Effect.gen(function* () {
+    const mcp = Layer.mock(Mcp.Service, {
+      callTool: (input) =>
+        Effect.succeed({
+          server: input.server,
+          tool: input.name,
+          isError: false,
+          content: [{ type: "text" as const, text: "approved" }],
+        }),
+    })
+    const handler = yield* ServerFetch.make(
+      {
+        ...options,
+        config: {
+          project: false,
+          content: JSON.stringify({ permissions: [{ action: "demo_search", resource: "*", effect: "ask" }] }),
+        },
+      },
+      { overrides: [Mcp.node.replace(mcp)] },
+    )
+    expect((yield* ready(handler)).status).toBe(200)
+    const created = (yield* Effect.promise(() =>
+      handler(
+        new Request("http://opencode.local/api/session", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: "{}",
+        }),
+      ).then((response) => response.json()),
+    )) as { data: { id: string } }
+    const call = handler(
+      new Request("http://opencode.local/api/mcp/demo/tool/search/call", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ arguments: { query: "data" }, sessionId: created.data.id }),
+      }),
+    )
+    const pending = yield* Effect.promise(() =>
+      handler(new Request(`http://opencode.local/api/session/${created.data.id}/permission`)).then(
+        (response) => response.json() as Promise<{ data: Array<{ id: string; action: string }> }>,
+      ),
+    ).pipe(
+      Effect.flatMap((result) =>
+        result.data[0] ? Effect.succeed(result.data[0]) : Effect.fail(new Error("permission is not pending")),
+      ),
+      Effect.retry({ times: 100, schedule: Schedule.spaced("10 millis") }),
+    )
+    expect(pending.action).toBe("demo_search")
+
+    const approved = yield* Effect.promise(() =>
+      handler(
+        new Request(`http://opencode.local/api/session/${created.data.id}/permission/${pending.id}/reply`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ reply: "once" }),
+        }),
+      ),
+    )
+    expect(approved.status).toBe(204)
+
+    const response = yield* Effect.promise(() => call)
+    expect(response.status).toBe(200)
+    expect(yield* Effect.promise(() => response.json())).toMatchObject({
+      server: "demo",
+      tool: "search",
+      isError: false,
+      content: [{ type: "text", text: "approved" }],
+    })
   }).pipe(Effect.scoped),
 )
 
