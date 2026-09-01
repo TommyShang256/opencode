@@ -292,15 +292,195 @@ const runPermissionCommand = (
     return { exit, requests }
   }).pipe(Effect.scoped, Effect.timeout(Duration.seconds(5)))
 
+const runRejectedDeleteCommand = (
+  registry: Tool.Interface,
+  command: string,
+  targets: ReadonlyArray<string>,
+  marker: string,
+) =>
+  Effect.gen(function* () {
+    const permission = yield* Permission.Service
+    const bus = yield* Bus.Service
+    const queue = yield* Queue.unbounded<Permission.Request>()
+    yield* bus.subscribe(Permission.Event.Asked).pipe(
+      Stream.runForEach((event) => Queue.offer(queue, event.data)),
+      Effect.forkScoped({ startImmediately: true }),
+    )
+    const execution = yield* executeTool(registry, call({ command }, `call-delete-${Permission.ID.create()}`)).pipe(
+      Effect.forkScoped,
+    )
+    const request = yield* Queue.take(queue)
+    expect(request).toMatchObject({
+      action: "delete",
+      resources: targets,
+      save: ["*"],
+      metadata: {
+        command,
+        workdir: path.dirname(marker),
+        filepath: targets.join(", "),
+        preview: targets.map((target) => `Delete ${target}`).join("\n"),
+      },
+    })
+    const present = (target: string) =>
+      Effect.promise(() =>
+        fs.stat(target).then(
+          () => true,
+          () => false,
+        ),
+      )
+    expect(yield* Effect.forEach(targets, present)).toEqual(targets.map(() => true))
+    expect(yield* present(marker)).toBe(false)
+    yield* permission.reply({ requestID: request.id, reply: "reject" })
+    const exit = yield* Fiber.await(execution)
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(yield* permission.list()).toEqual([])
+    expect(yield* Effect.forEach(targets, present)).toEqual(targets.map(() => true))
+    expect(yield* present(marker)).toBe(false)
+    return request
+  }).pipe(Effect.scoped, Effect.timeout(Duration.seconds(5)))
+
 // Directory cases still document inherited limitations; fixed scanner cases require matching behavior.
 describe("ShellTool scanner permissions", () => {
   const test = isWindows || !Bun.which("sh") ? permissionIt.live.skip : permissionIt.live
   for (const portable of [false, true]) {
     const scanner = portable ? "native" : "legacy"
 
+    test(`${scanner}: rejected delete approval preserves files, directories, and batch targets`, () =>
+      withScanner(portable, (registry, fixture) =>
+        Effect.gen(function* () {
+          const agents = yield* Agent.Service
+          yield* agents.transform((draft) =>
+            draft.update(toolIdentity.agent, (agent) => {
+              agent.permissions = [
+                { action: "shell", resource: "*", effect: "allow" },
+                { action: "delete", resource: "*", effect: "ask" },
+              ]
+            }),
+          )
+          const file = path.join(fixture.active, "single.txt")
+          const directory = path.join(fixture.active, "empty-dir")
+          const first = path.join(fixture.active, "first.txt")
+          const second = path.join(fixture.active, "second.txt")
+          yield* Effect.promise(() =>
+            Promise.all([
+              Bun.write(file, "single"),
+              fs.mkdir(directory),
+              Bun.write(first, "first"),
+              Bun.write(second, "second"),
+            ]),
+          )
+
+          yield* runRejectedDeleteCommand(
+            registry,
+            "rm() { :; }; rm single.txt && ls -la && touch rm-marker",
+            [file],
+            path.join(fixture.active, "rm-marker"),
+          )
+          yield* runRejectedDeleteCommand(
+            registry,
+            "rmdir() { :; }; rmdir empty-dir && touch rmdir-marker",
+            [directory],
+            path.join(fixture.active, "rmdir-marker"),
+          )
+          yield* runRejectedDeleteCommand(
+            registry,
+            "rm() { :; }; rm first.txt second.txt && touch batch-marker",
+            [first, second],
+            path.join(fixture.active, "batch-marker"),
+          )
+        }),
+      ))
+
+    test(`${scanner}: rejects unlink, find delete, git clean, move, and truncating redirects before launch`, () =>
+      withScanner(portable, (registry, fixture) =>
+        Effect.gen(function* () {
+          const agents = yield* Agent.Service
+          yield* agents.transform((draft) =>
+            draft.update(toolIdentity.agent, (agent) => {
+              agent.permissions = [
+                { action: "shell", resource: "*", effect: "allow" },
+                { action: "delete", resource: "*", effect: "ask" },
+              ]
+            }),
+          )
+          const source = path.join(fixture.active, "source.txt")
+          const destination = path.join(fixture.active, "destination.txt")
+          yield* Effect.promise(() => Promise.all([Bun.write(source, "source"), Bun.write(destination, "destination")]))
+
+          yield* runRejectedDeleteCommand(
+            registry,
+            "unlink() { :; }; unlink source.txt && touch unlink-marker",
+            [source],
+            path.join(fixture.active, "unlink-marker"),
+          )
+          yield* runRejectedDeleteCommand(
+            registry,
+            "find() { :; }; find . -delete && touch find-marker",
+            [fixture.active],
+            path.join(fixture.active, "find-marker"),
+          )
+          yield* runRejectedDeleteCommand(
+            registry,
+            "git() { :; }; git clean -fd && touch git-marker",
+            [fixture.active],
+            path.join(fixture.active, "git-marker"),
+          )
+          yield* runRejectedDeleteCommand(
+            registry,
+            "mv() { :; }; mv source.txt destination.txt && touch mv-marker",
+            [source, destination],
+            path.join(fixture.active, "mv-marker"),
+          )
+          yield* runRejectedDeleteCommand(
+            registry,
+            ": > /dev/null && touch redirect-marker",
+            ["/dev/null"],
+            path.join(fixture.active, "redirect-marker"),
+          )
+        }),
+      ))
+
+    test(`${scanner}: quoted destructive text does not request delete approval`, () =>
+      withScanner(portable, (registry, fixture) =>
+        Effect.gen(function* () {
+          const agents = yield* Agent.Service
+          yield* agents.transform((draft) =>
+            draft.update(toolIdentity.agent, (agent) => {
+              agent.permissions = [
+                { action: "shell", resource: "*", effect: "allow" },
+                { action: "delete", resource: "*", effect: "ask" },
+              ]
+            }),
+          )
+          const marker = path.join(fixture.active, "quoted-marker")
+          const result = yield* runPermissionCommand(
+            registry,
+            "printf '%s' 'rm sample.txt && rmdir old && find . -delete && git clean -fd && mv a b && : > empty.txt'",
+            marker,
+            [],
+          )
+          expect(result.requests).toEqual([])
+          expect(result.exit).toMatchObject({
+            _tag: "Success",
+            value: {
+              status: "completed",
+              output: expect.objectContaining({
+                output: "rm sample.txt && rmdir old && find . -delete && git clean -fd && mv a b && : > empty.txt",
+              }),
+            },
+          })
+        }),
+      ))
+
     test(`${scanner}: declarations reuse approvals while substitutions retain reject/once/always behavior`, () =>
       withScanner(portable, (registry, fixture) =>
         Effect.gen(function* () {
+          const agents = yield* Agent.Service
+          yield* agents.transform((draft) =>
+            draft.update(toolIdentity.agent, (agent) => {
+              agent.permissions = [{ action: "delete", resource: "*", effect: "allow" }]
+            }),
+          )
           const saved = yield* PermissionSaved.Service
           const location = yield* Location.Service
           yield* saved.add({ projectID: location.project.id, action: "shell", resources: ["printf *"] })
@@ -354,10 +534,12 @@ describe("ShellTool scanner permissions", () => {
           }
           expect((yield* saved.list()).map((item) => item.resource)).toEqual(["printf *"])
 
-          const agents = yield* Agent.Service
           yield* agents.transform((draft) =>
             draft.update(toolIdentity.agent, (agent) => {
-              agent.permissions = [{ action: "shell", resource: "printf hello", effect: "deny" }]
+              agent.permissions = [
+                { action: "delete", resource: "*", effect: "allow" },
+                { action: "shell", resource: "printf hello", effect: "deny" },
+              ]
             }),
           )
           yield* Effect.promise(() => fs.rm(marker))
@@ -605,6 +787,7 @@ describe("ShellTool ordinary shell syntax", () => {
               yield* agents.transform((draft) =>
                 draft.update(toolIdentity.agent, (agent) => {
                   agent.permissions = [
+                    { action: "delete", resource: "*", effect: "allow" },
                     { action: "shell", resource: "*", effect: "allow" },
                     { action: "shell", resource: "printf *", effect: "deny" },
                   ]
@@ -817,6 +1000,99 @@ describe("ShellTool", () => {
       ),
     { timeout: 15_000 },
   )
+
+  if (!isWindows) {
+    productionIt.live(
+      "workspace-only shell does not inherit server secrets",
+      () =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => {
+            const previous = {
+              mode: process.env.OPENCODE_WORKSPACE_ONLY,
+              secret: process.env.DATAAGENT_LEAK_TEST_TOKEN,
+            }
+            process.env.OPENCODE_WORKSPACE_ONLY = "true"
+            process.env.DATAAGENT_LEAK_TEST_TOKEN = "server-secret"
+            return previous
+          }),
+          () =>
+            Effect.acquireUseRelease(
+              Effect.promise(() => tmpdir()),
+              (tmp) => {
+                reset()
+                return withSession(tmp.path, (registry) =>
+                  Effect.gen(function* () {
+                    const settled = yield* executeTool(
+                      registry,
+                      call({ command: 'printf %s "${DATAAGENT_LEAK_TEST_TOKEN-unset}"' }, "call-secret-env"),
+                    )
+
+                    expect(settled.status).toBe("completed")
+                    expect(settled.content?.[0]).toEqual({ type: "text", text: "unset" })
+                  }),
+                )
+              },
+              (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+            ),
+          (previous) =>
+            Effect.sync(() => {
+              if (previous.mode === undefined) delete process.env.OPENCODE_WORKSPACE_ONLY
+              else process.env.OPENCODE_WORKSPACE_ONLY = previous.mode
+              if (previous.secret === undefined) delete process.env.DATAAGENT_LEAK_TEST_TOKEN
+              else process.env.DATAAGENT_LEAK_TEST_TOKEN = previous.secret
+            }),
+        ),
+      { timeout: 15_000 },
+    )
+
+    productionIt.live(
+      "workspace-only shell cannot follow a workspace symlink outside its Location",
+      () =>
+        Effect.acquireUseRelease(
+          Effect.sync(() => {
+            const previous = process.env.OPENCODE_WORKSPACE_ONLY
+            process.env.OPENCODE_WORKSPACE_ONLY = "true"
+            return previous
+          }),
+          () =>
+            Effect.acquireUseRelease(
+              Effect.promise(() => tmpdir()),
+              (tmp) => {
+                reset()
+                const active = path.join(tmp.path, "active")
+                const outside = path.join(tmp.path, "outside")
+                return Effect.promise(async () => {
+                  await Promise.all([fs.mkdir(active), fs.mkdir(outside)])
+                  await Bun.write(path.join(outside, "secret.txt"), "outside-secret")
+                  await fs.symlink(outside, path.join(active, "123"))
+                }).pipe(
+                  Effect.andThen(
+                    withSession(active, (registry) =>
+                      Effect.gen(function* () {
+                        const settled = yield* executeTool(
+                          registry,
+                          call({ command: "cat 123/secret.txt" }, "call-symlink-escape"),
+                        )
+                        const output = settled.content?.[0]?.type === "text" ? settled.content[0].text : ""
+
+                        expect(output).not.toContain("outside-secret")
+                        expect(settled.metadata?.exit).not.toBe(0)
+                      }),
+                    ),
+                  ),
+                )
+              },
+              (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+            ),
+          (previous) =>
+            Effect.sync(() => {
+              if (previous === undefined) delete process.env.OPENCODE_WORKSPACE_ONLY
+              else process.env.OPENCODE_WORKSPACE_ONLY = previous
+            }),
+        ),
+      { timeout: 15_000 },
+    )
+  }
 
   it.live("resolves a relative workdir from the active Location", () =>
     Effect.acquireUseRelease(
@@ -1093,7 +1369,7 @@ describe("ShellTool", () => {
               }
               expect(settled.status).toBe("completed")
               expect(settled.metadata?.exit).not.toBe(0)
-              expect(assertions.map((item) => item.action)).toEqual(["shell"])
+              expect(assertions.map((item) => item.action)).toEqual(["delete", "shell"])
               expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "marker")).text())).toBe("hello")
             }),
           (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),

@@ -259,17 +259,14 @@ const layer = () =>
           cwd: input.cwd ?? location.directory,
           timeout: input.timeout,
           shell: input.shell ?? (yield* shell.resolve({ priority: "config" })),
-          env: {
-            ...(sessionEnvironment ?? process.env),
-            TERM: "xterm-256color",
-            OPENCODE_TERMINAL: "1",
-          },
+          env: shellEnvironment(sessionEnvironment, location.directory),
         }
         yield* hooks.trigger("shell", "create.before", invocation)
         if (before) yield* before(invocation)
 
         const id = Shell.ID.ascending()
         const args = ShellSelect.args(invocation.shell, invocation.command)
+        const sandbox = sandboxCommand(invocation, args, location.directory)
         const file = path.join(outputDir, `${id}.out`)
 
         const info: Info = {
@@ -292,9 +289,9 @@ const layer = () =>
             Effect.gen(function* () {
               const handle = yield* environment.spawner
                 .spawn(
-                  ChildProcess.make(invocation.shell, args, {
-                    cwd: invocation.cwd,
-                    env: invocation.env,
+                  ChildProcess.make(sandbox.executable, sandbox.args, {
+                    cwd: sandbox.cwd,
+                    env: sandbox.env,
                     stdin: "ignore",
                     detached: process.platform !== "win32",
                     forceKillAfter: Duration.seconds(3),
@@ -435,3 +432,102 @@ export const node = makeLocationNode({
     cleanupNode,
   ],
 })
+
+const safeServerEnvironment = new Set([
+  "COLORTERM",
+  "FORCE_COLOR",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_CTYPE",
+  "NO_COLOR",
+  "PATH",
+  "SHELL",
+  "TERM",
+  "TZ",
+])
+
+function shellEnvironment(session: SessionEnvironment.Variables | undefined, directory: string) {
+  const workspaceOnly = process.env.OPENCODE_WORKSPACE_ONLY === "true"
+  const source = session ?? process.env
+  const values = workspaceOnly
+    ? Object.fromEntries(Object.entries(source).filter(([key]) => safeServerEnvironment.has(key)))
+    : source
+  return {
+    ...values,
+    ...(workspaceOnly ? { HOME: directory } : {}),
+    TERM: "xterm-256color",
+    OPENCODE_TERMINAL: "1",
+  }
+}
+
+function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory: string) {
+  if (process.env.OPENCODE_WORKSPACE_ONLY !== "true") {
+    return { executable: invocation.shell, args, cwd: invocation.cwd, env: invocation.env }
+  }
+  const parents = path
+    .resolve(directory)
+    .split(path.sep)
+    .filter(Boolean)
+    .slice(0, -1)
+    .reduce<string[]>((all, segment) => [...all, path.join(all.at(-1) ?? path.sep, segment)], [])
+    .filter((item) => item !== "/tmp")
+    .flatMap((item) => ["--dir", item])
+  return {
+    executable: "/usr/bin/bwrap",
+    args: [
+      "--die-with-parent",
+      "--new-session",
+      "--unshare-all",
+      "--share-net",
+      "--ro-bind",
+      "/usr",
+      "/usr",
+      "--symlink",
+      "usr/bin",
+      "/bin",
+      "--symlink",
+      "usr/lib",
+      "/lib",
+      "--symlink",
+      "usr/lib64",
+      "/lib64",
+      "--symlink",
+      "usr/sbin",
+      "/sbin",
+      "--proc",
+      "/proc",
+      "--dev",
+      "/dev",
+      "--tmpfs",
+      "/tmp",
+      "--dir",
+      "/etc",
+      "--ro-bind-try",
+      "/etc/resolv.conf",
+      "/etc/resolv.conf",
+      "--ro-bind-try",
+      "/etc/hosts",
+      "/etc/hosts",
+      "--ro-bind-try",
+      "/etc/nsswitch.conf",
+      "/etc/nsswitch.conf",
+      "--dir",
+      "/etc/ssl",
+      "--ro-bind",
+      "/etc/ssl/certs",
+      "/etc/ssl/certs",
+      ...parents,
+      "--bind",
+      directory,
+      directory,
+      "--chdir",
+      invocation.cwd,
+      "--",
+      invocation.shell,
+      ...args,
+    ],
+    cwd: directory,
+    env: shellEnvironment(invocation.env, directory),
+  }
+}
