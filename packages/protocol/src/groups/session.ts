@@ -411,11 +411,42 @@ export const makeSessionGroup = <
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.clientToolResults", "/api/session/:sessionID/client-tool-results", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          results: Schema.NonEmptyArray(
+            Schema.Union([
+              Schema.Struct({
+                toolCallId: Schema.String,
+                status: Schema.Literal("completed"),
+                output: Schema.Unknown,
+              }),
+              Schema.Struct({
+                toolCallId: Schema.String,
+                status: Schema.Literal("failed"),
+                error: Schema.Unknown,
+              }),
+            ]),
+          ),
+        }),
+        success: HttpApiSchema.NoContent,
+        error: [ConflictError, SessionBusyError, SessionNotFoundError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.clientToolResults",
+            summary: "Submit client tool results",
+            description: "Complete waiting client-owned native tool calls and resume session execution.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.command", "/api/session/:sessionID/command", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
           name: Schema.String,
-          ...PromptInput.Prompt.fields,
+          ...Struct.omit(PromptInput.Prompt.fields, ["clientTools"]),
           delivery: SessionInbox.Delivery.pipe(Schema.optional),
         }),
         success: HttpApiSchema.NoContent,

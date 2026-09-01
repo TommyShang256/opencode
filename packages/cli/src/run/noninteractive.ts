@@ -247,7 +247,9 @@ export async function runNonInteractivePrompt(input: Input) {
       if (
         !promoted &&
         finalizing &&
-        (event.type === "session.execution.succeeded" || event.type === "session.execution.interrupted")
+        (event.type === "session.execution.succeeded" ||
+          event.type === "session.execution.interrupted" ||
+          event.type === "session.execution.suspended")
       )
         return
       if (!promoted) continue
@@ -532,7 +534,7 @@ export async function runNonInteractivePrompt(input: Input) {
         }
         return
       }
-      if (event.type === "session.execution.succeeded") return
+      if (event.type === "session.execution.succeeded" || event.type === "session.execution.suspended") return
     }
   }
 
@@ -604,7 +606,13 @@ export async function runNonInteractivePrompt(input: Input) {
         }
 
         const key = toolKey(message.id, item.id)
-        if (renderedTools.has(key) || item.state.status === "streaming" || item.state.status === "running") continue
+        if (
+          renderedTools.has(key) ||
+          item.state.status === "streaming" ||
+          item.state.status === "running" ||
+          item.state.status === "waiting-client"
+        )
+          continue
         const part: MiniToolPart = {
           partID: projectedPartID(message.id, `tool-${item.id}`),
           sessionID: input.sessionID,

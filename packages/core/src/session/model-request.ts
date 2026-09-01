@@ -10,6 +10,7 @@ import {
   type Media,
   Message,
   SystemPart,
+  ToolDefinition,
 } from "@opencode/ai"
 import type { StreamOptions } from "@opencode/ai/route"
 import type {
@@ -60,6 +61,7 @@ const OUTPUT_TOKEN_MIN = 1_024
 export type ExecuteError = Tool.Error | Permission.DeclinedError | QuestionTool.CancelledError
 
 export interface Prepared<Event = SessionRequest> {
+  readonly toolTarget: (name: string) => "local" | "client"
   readonly event: Event
   readonly request: LLMRequest
   readonly options: StreamOptions
@@ -75,6 +77,7 @@ export interface Input {
   readonly agent: Agent.ID
   readonly model: SessionRunnerModel.Resolved
   readonly tools?: Tool.Snapshot
+  readonly clientTools?: ReadonlyArray<ToolDefinition>
   readonly system: Array<SystemPart>
   readonly messages: Array<Message>
   readonly toolChoice?: LLM.RequestInput["toolChoice"]
@@ -105,8 +108,20 @@ export const baseTranscript = (input: {
   readonly messages: ReadonlyArray<SessionMessage.Info>
 }) => {
   const providerMetadataKey = input.model.model.route.providerMetadataKey ?? input.model.model.provider
+  const clientTools = new Map(
+    (input.messages.findLast((message) => message.type === "user")?.clientTools ?? []).map(
+      (tool) => [tool.name, tool] as const,
+    ),
+  )
   return {
     providerMetadataKey,
+    clientTools: Array.from(clientTools.values(), (tool) =>
+      ToolDefinition.make({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }),
+    ),
     system: [
       input.agent.system
         ? input.agent.system
@@ -239,10 +254,11 @@ export const layer = Layer.effect(
         definitions: [],
         execute: () => new Tool.Error({ message: "Tools are not available for this request" }),
       }
+      const registry = new Map([...tools.definitions, ...(input.clientTools ?? [])].map((tool) => [tool.name, tool]))
       // Remember which tool each definition object came from. Hooks rename a tool by moving
       // its definition to a new key, so after the hook we find the tool by object identity.
       const given = new Map(
-        tools.definitions.map((t) => [{ description: t.description, input: { ...t.inputSchema } }, t] as const),
+        Array.from(registry.values(), (t) => [{ description: t.description, input: { ...t.inputSchema } }, t] as const),
       )
       // Hooks see the default output limit and may change or remove it. Titles and generate keep the provider default,
       // because their reasoning is hard to budget.
@@ -261,13 +277,16 @@ export const layer = Layer.effect(
       )
       // Match by identity first, then by key. Entries matching neither were invented by a
       // hook and are dropped. `t.name` stays the real name so execution can map renames back.
-      const byName = new Map(tools.definitions.map((t) => [t.name, t]))
+      const byName = registry
       const hooked = new Map(
         Object.entries(shaped.tools ?? {}).flatMap(([name, d]) => {
           const t = given.get(d) ?? byName.get(name)
           return t ? [[name, { ...t, description: d.description, inputSchema: d.input }] as const] : []
         }),
       )
+      const clientNames = new Set((input.clientTools ?? []).map((tool) => tool.name))
+      const clientTargets = new Set(Array.from(hooked).filter(([,tool]) => clientNames.has(tool.name)).map(([name]) => name))
+      const localDefinitions = new Map(Array.from(hooked).filter(([name]) => !clientTargets.has(name)))
       const entries = Object.entries(shaped.options)
       const generation = Object.fromEntries(entries.filter(([k]) => GENERATION_KEYS.has(k))) as GenerationOptionsFields
       const providerOptions = Object.fromEntries(entries.filter(([k]) => !GENERATION_KEYS.has(k)))
@@ -387,6 +406,7 @@ export const layer = Layer.effect(
           : undefined
 
       return {
+        toolTarget: (name: string) => clientTargets.has(name) ? "client" as const : "local" as const,
         event: shaped,
         request,
         options: { ...(http ? { http } : {}), ...(webSocket ? { webSocket } : {}) },
@@ -395,7 +415,7 @@ export const layer = Layer.effect(
         // Permission.assert and the question tool throw declines as defects so tools cannot
         // catch them and turn a "no" into model-visible output. Recover them here as failures.
         executeTool: (call: Parameters<Prepared["executeTool"]>[0]) =>
-          tools.execute({ ...call, definitions: hooked }).pipe(
+          tools.execute({ ...call, definitions: localDefinitions }).pipe(
             Effect.catchCauseFilter(
               (cause) => {
                 const decline = cause.reasons.flatMap((r) =>

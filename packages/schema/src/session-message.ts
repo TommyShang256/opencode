@@ -77,6 +77,7 @@ export const User = Schema.Struct({
   files: Prompt.fields.files,
   agents: Prompt.fields.agents,
   skills: Prompt.fields.skills,
+  clientTools: Prompt.fields.clientTools,
   type: Schema.tag("user"),
 }).annotate({ identifier: "Session.Message.User" })
 
@@ -135,6 +136,12 @@ export const ToolStateRunning = Schema.Struct({
   metadata: Schema.Record(Schema.String, Schema.Json),
 }).annotate({ identifier: "Session.Message.ToolState.Running" })
 
+export interface ToolStateWaitingClient extends Schema.Schema.Type<typeof ToolStateWaitingClient> {}
+export const ToolStateWaitingClient = Schema.Struct({
+  status: Schema.tag("waiting-client"),
+  input: Schema.Record(Schema.String, Schema.Unknown),
+}).annotate({ identifier: "Session.Message.ToolState.WaitingClient" })
+
 export interface ToolStateCompleted extends Schema.Schema.Type<typeof ToolStateCompleted> {}
 export const ToolStateCompleted = Schema.Struct({
   status: Schema.tag("completed"),
@@ -152,10 +159,19 @@ export const ToolStateError = Schema.Struct({
   metadata: Schema.Record(Schema.String, Schema.Json).pipe(optional),
 }).annotate({ identifier: "Session.Message.ToolState.Error" })
 
-export const ToolState = Schema.Union([ToolStateStreaming, ToolStateRunning, ToolStateCompleted, ToolStateError]).pipe(
-  Schema.toTaggedUnion("status"),
-)
-export type ToolState = ToolStateStreaming | ToolStateRunning | ToolStateCompleted | ToolStateError
+export const ToolState = Schema.Union([
+  ToolStateStreaming,
+  ToolStateRunning,
+  ToolStateWaitingClient,
+  ToolStateCompleted,
+  ToolStateError,
+]).pipe(Schema.toTaggedUnion("status"))
+export type ToolState =
+  | ToolStateStreaming
+  | ToolStateRunning
+  | ToolStateWaitingClient
+  | ToolStateCompleted
+  | ToolStateError
 
 export interface AssistantTool extends Schema.Schema.Type<typeof AssistantTool> {}
 export const AssistantTool = Schema.Struct({

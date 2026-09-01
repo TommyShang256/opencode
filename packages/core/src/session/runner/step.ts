@@ -31,6 +31,10 @@ import { SessionRunnerRetry } from "./retry.js"
 
 export type Outcome = Data.TaggedEnum<{
   Completed: { readonly needsContinuation: boolean }
+  Suspended: {
+    readonly reason: "client-tool"
+    readonly calls: ReadonlyArray<{ readonly id: string; readonly name: string; readonly input: unknown }>
+  }
   Retry: { readonly error: SessionError.Error; readonly decision: SessionRunnerRetry.Decision }
   Continue: {
     readonly error: SessionError.Error
@@ -84,6 +88,7 @@ export const make = Effect.gen(function* () {
       readonly call: ToolCall
       readonly fiber: Fiber.Fiber<void, Permission.DeclinedError | QuestionTool.CancelledError>
     }> = []
+    const clientToolCalls: ToolCall[] = []
     const interruptTools = Effect.suspend(() => Fiber.interruptAll(toolRuns.map((run) => run.fiber)))
     const executeTool = (call: ToolCall) => {
       if (input.prepared.request.toolChoice?.type === "none")
@@ -115,6 +120,11 @@ export const make = Effect.gen(function* () {
           }
           yield* publisher.publish(event)
           if (event.type !== "tool-call" || event.providerExecuted) return
+          if (input.prepared.toolTarget(event.name) === "client") {
+            clientToolCalls.push(event)
+            yield* publisher.waitForClient(event.id)
+            return
+          }
           toolRuns.push({
             call: event,
             fiber: yield* Effect.uninterruptibleMask((restore) =>
@@ -268,6 +278,11 @@ export const make = Effect.gen(function* () {
         if (tools.interrupted && tools.failure) return yield* Effect.failCause(tools.failure)
         if (tools.interrupted && Exit.isFailure(joined)) return yield* Effect.failCause(joined.cause)
         if (record.failure) return yield* new StepFailedError({ error: record.failure })
+        if (clientToolCalls.length > 0)
+          return Outcome.Suspended({
+            reason: "client-tool",
+            calls: clientToolCalls.map((call) => ({ id: call.id, name: call.name, input: call.input })),
+          })
         return Outcome.Completed({
           needsContinuation: input.prepared.request.toolChoice?.type !== "none" && record.needsContinuation,
         })

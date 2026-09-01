@@ -395,6 +395,44 @@ it.effect(
 )
 
 it.effect(
+  "does not inherit prompt-scoped client tools into transient generation",
+  () =>
+    Effect.gen(function* () {
+      requests.length = 0
+      options.length = 0
+      instruction = "Initial context"
+      const { db, bus, instructions, session, instances } = yield* setup
+      yield* InstructionState.prepare(db, bus, instructions, sessionID)
+      const messageID = SessionMessage.ID.create()
+      yield* bus.publish(SessionEvent.InboxEnqueued, {
+        sessionID,
+        inboxID: messageID,
+        item: {
+          type: "user",
+          payload: {
+            text: "Existing durable context",
+            clientTools: [
+              {
+                name: "present_artifact",
+                description: "Present an artifact in the browser",
+                inputSchema: { type: "object" },
+              },
+            ],
+          },
+          delivery: "steer",
+        },
+      })
+      yield* bus.publish(SessionEvent.InboxDelivered, { sessionID, inboxID: messageID })
+
+      expect(yield* SessionGenerate.generate({ session, prompt: "Summarize privately" }).pipe(Effect.provideService(Instance.Service, instances))).toBe("Transient answer")
+
+      expect(requests).toHaveLength(1)
+      expect(requests[0]?.tools.map((tool) => tool.name)).toEqual(["lookup"])
+    }),
+  { timeout: 15_000 },
+)
+
+it.effect(
   "blocks unavailable initial instructions before generation",
   () =>
     Effect.gen(function* () {

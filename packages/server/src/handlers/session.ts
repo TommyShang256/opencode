@@ -313,6 +313,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 files: ctx.payload.files,
                 agents: ctx.payload.agents,
                 skills: ctx.payload.skills,
+                clientTools: ctx.payload.clientTools,
                 metadata: ctx.payload.metadata,
                 delivery: ctx.payload.delivery,
                 resume: ctx.payload.resume,
@@ -335,6 +336,20 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 ),
               ),
           }
+        }),
+      )
+      .handle(
+        "session.clientToolResults",
+        Effect.fn(function* (ctx) {
+          yield* session.clientToolResults({ sessionID: ctx.params.sessionID, results: ctx.payload.results }).pipe(
+            Effect.catchTag("Session.NotFoundError", missingSession),
+            Effect.catchTag("Session.BusyError", busySession),
+            Effect.catchTag(
+              "Session.ClientToolResultConflictError",
+              (error) => new ConflictError({ resource: error.toolCallID, message: error.message }),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
         }),
       )
       .handle(

@@ -61,23 +61,32 @@ export const SkillAttachment = Schema.Struct({
   mention: PromptMention.pipe(optional),
 }).annotate({ identifier: "Prompt.SkillAttachment" })
 
+export interface ClientTool extends Schema.Schema.Type<typeof ClientTool> {}
+export const ClientTool = Schema.Struct({
+  name: Schema.Literal("present_artifact"),
+  description: Schema.String,
+  inputSchema: Schema.Record(Schema.String, Schema.Json),
+}).annotate({ identifier: "Prompt.ClientTool" })
+
 export interface Prompt extends Schema.Schema.Type<typeof Prompt> {}
 export const Prompt = Schema.Struct({
   text: Schema.String,
   files: Schema.Array(FileAttachment).pipe(optional),
   agents: Schema.Array(AgentAttachment).pipe(optional),
   skills: Schema.Array(SkillAttachment).pipe(optional),
+  clientTools: Schema.Array(ClientTool).pipe(optional),
 })
   .annotate({ identifier: "Prompt" })
   .pipe(
     statics((schema) => ({
       equivalence: Schema.toEquivalence(schema),
-      fromUserMessage: (input: Pick<Prompt, "text" | "files" | "agents" | "skills">) =>
+      fromUserMessage: (input: Pick<Prompt, "text" | "files" | "agents" | "skills" | "clientTools">) =>
         schema.make({
           text: input.text,
           ...(input.files === undefined ? {} : { files: input.files }),
           ...(input.agents === undefined ? {} : { agents: input.agents }),
           ...(input.skills === undefined ? {} : { skills: input.skills }),
+          ...(input.clientTools === undefined ? {} : { clientTools: input.clientTools }),
         }),
     })),
   )

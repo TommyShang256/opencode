@@ -13,6 +13,7 @@ import { ShellResult } from "../shell/result.js"
 import type { Skill } from "../skill.js"
 import {
   BusyError,
+  ClientToolResultConflictError,
   CompactionConflictError,
   InboxConflictError,
   MessageNotFoundError,
@@ -271,6 +272,85 @@ export const make = Effect.fn("Session.make")(function* () {
     yield* get(sessionID)
     yield* execution.resume(sessionID)
   })
+  const clientToolResults = Effect.fn("Session.clientToolResults")(function* (
+    sessionID: SessionSchema.ID,
+    input: {
+      results: ReadonlyArray<
+        | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+        | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+      >
+    },
+  ) {
+    yield* get(sessionID)
+    yield* execution.awaitIdle(sessionID)
+    const messages = yield* store.context(sessionID)
+    const pending = new Map(
+      messages.flatMap((message) =>
+        message.type === "assistant"
+          ? message.content.flatMap((content) =>
+              content.type === "tool" && content.state.status === "waiting-client"
+                ? [[content.id, { messageID: message.id, tool: content }] as const]
+                : [],
+            )
+          : [],
+      ),
+    )
+    const seen = new Set<string>()
+    if (input.results.length === 0)
+      return yield* new ClientToolResultConflictError({
+        sessionID,
+        toolCallID: "",
+        message: "At least one client tool result is required",
+      })
+    const events = input.results.map((result) => {
+      const found = pending.get(result.toolCallId)
+      if (!found)
+        return new ClientToolResultConflictError({
+          sessionID,
+          toolCallID: result.toolCallId,
+          message: `Client tool call is not waiting: ${result.toolCallId}`,
+        })
+      if (seen.has(result.toolCallId))
+        return new ClientToolResultConflictError({
+          sessionID,
+          toolCallID: result.toolCallId,
+          message: `Duplicate client tool result: ${result.toolCallId}`,
+        })
+      seen.add(result.toolCallId)
+      if (result.status === "failed")
+        return [
+          SessionEvent.Tool.Failed,
+          {
+            sessionID,
+            assistantMessageID: found.messageID,
+            id: result.toolCallId,
+            error: { type: "tool.execution", message: stringifyClientToolResult(result.error) },
+            content: [{ type: "text" as const, text: stringifyClientToolResult(result.error) }],
+            executed: false,
+          },
+        ] as const
+      return [
+        SessionEvent.Tool.Success,
+        {
+          sessionID,
+          assistantMessageID: found.messageID,
+          id: result.toolCallId,
+          content: [{ type: "text" as const, text: stringifyClientToolResult(result.output) }],
+          executed: false,
+        },
+      ] as const
+    })
+    const conflict = events.find(
+      (event): event is ClientToolResultConflictError => event instanceof ClientToolResultConflictError,
+    )
+    if (conflict) return yield* conflict
+    if (events.length === 0) return
+    const first = events[0]
+    if (!first) return
+    yield* bus.publishAll([first, ...events.slice(1)] as [typeof first, ...typeof events])
+    yield* execution.resume(sessionID)
+  }, Effect.uninterruptible)
+
   const synthetic = Effect.fn("Session.synthetic")(
     (
       sessionID: SessionSchema.ID,
@@ -361,6 +441,7 @@ export const make = Effect.fn("Session.make")(function* () {
     compact,
     wait,
     resume,
+    clientToolResults,
     interrupt,
     cancelInbox,
     steerInbox,
@@ -385,6 +466,7 @@ export const make = Effect.fn("Session.make")(function* () {
     const compact = operations.compact.bind(undefined, sessionID)
     const wait = operations.wait.bind(undefined, sessionID)
     const resume = operations.resume.bind(undefined, sessionID)
+    const clientToolResults = operations.clientToolResults.bind(undefined, sessionID)
     const interrupt = operations.interrupt.bind(undefined, sessionID)
     const cancelInbox = operations.cancelInbox.bind(undefined, sessionID)
     const steerInbox = operations.steerInbox.bind(undefined, sessionID)
@@ -412,6 +494,7 @@ export const make = Effect.fn("Session.make")(function* () {
       compact,
       wait,
       resume,
+      clientToolResults,
       interrupt,
       cancelInbox,
       steerInbox,
@@ -423,5 +506,14 @@ export const make = Effect.fn("Session.make")(function* () {
 })
 
 export type Handle = ReturnType<Effect.Success<ReturnType<typeof make>>["forSession"]>
+
+function stringifyClientToolResult(value: unknown) {
+  if (typeof value === "string") return value
+  try {
+    return JSON.stringify(value) ?? String(value)
+  } catch {
+    return String(value)
+  }
+}
 
 // Mirrors the shell tool's in-memory preview safety limit.

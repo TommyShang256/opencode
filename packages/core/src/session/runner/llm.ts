@@ -67,6 +67,16 @@ const layer = Layer.effect(
       yield* plugins.awaitActivation
       yield* settleStaleCompactions(sessionID)
       yield* settleStaleToolCalls(sessionID)
+      const waiting = (yield* store.context(sessionID)).flatMap((message) =>
+        message.type === "assistant"
+          ? message.content.flatMap((content) =>
+              content.type === "tool" && content.state.status === "waiting-client"
+                ? [{ id: content.id, name: content.name, input: content.state.input }]
+                : [],
+            )
+          : [],
+      )
+      if (waiting.length > 0) return DrainResult.Suspended({ reason: "client-tool", calls: waiting })
 
       const advanceToStep = Effect.fn("SessionRunner.advanceToStep")(() =>
         Effect.uninterruptibleMask((restore) =>
@@ -188,7 +198,9 @@ const layer = Layer.effect(
       while (true) {
         const next = yield* advanceToStep()
         if (next._tag !== "Ready") return next
-        continuing = yield* runStep(next.context, step)
+        const result = yield* runStep(next.context, step)
+        if (result._tag === "Suspended") return DrainResult.Suspended(result)
+        continuing = result.continuing
         step++
         force = false
         entering = false
@@ -233,6 +245,7 @@ const layer = Layer.effect(
           agent: loaded.agent.id,
           model: loaded.model,
           tools: loaded.tools,
+          clientTools: transcript.clientTools,
           system: transcript.system,
           messages: stepLimitReached
             ? [...transcript.messages, Message.assistant(MAX_STEPS_PROMPT)]
@@ -268,7 +281,8 @@ const layer = Layer.effect(
           ),
         })
         const completed = yield* SessionStep.Outcome.$match(outcome, {
-          Completed: (outcome) => Effect.succeed(outcome.needsContinuation),
+          Completed: (outcome) => Effect.succeed({ _tag: "Completed" as const, continuing: outcome.needsContinuation }),
+          Suspended: (outcome) => Effect.succeed({ _tag: "Suspended" as const, ...outcome }),
           Retry: (outcome) =>
             retry.wait({
               decision: outcome.decision,

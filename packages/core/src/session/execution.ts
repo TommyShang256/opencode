@@ -62,6 +62,7 @@ export const layer = Layer.effect(
     const bus = yield* Bus.Service
     const jobs = yield* Job.Service
     const db = (yield* Database.Service).db
+    const suspensions = new Map<SessionSchema.ID, Extract<SessionRunner.DrainResult, { readonly _tag: "Suspended" }>>()
     const reportLifecycle = <A>(sessionID: SessionSchema.ID, effect: Effect.Effect<A>) =>
       effect.pipe(
         Effect.tapCause((cause) =>
@@ -103,7 +104,8 @@ export const layer = Layer.effect(
         ),
       )
       return yield* SessionRunner.DrainResult.$match(result, {
-        Complete: () => Effect.void,
+        Complete: () => Effect.succeed({ _tag: "Complete" as const }),
+        Suspended: (result) => Effect.succeed({ _tag: "Suspended" as const, ...result }),
         Moved: (result) => drain(sessionID, false, result.continuation, promotable),
         Reloaded: (result) => drain(sessionID, result.force, result.continuation, promotable),
       })
@@ -114,12 +116,32 @@ export const layer = Layer.effect(
           sessionID,
           bus.publish(SessionEvent.Execution.Started, { sessionID }, claimOnCommit(sessionID)),
         ),
-      drain: (sessionID, force, promotable) => drain(sessionID, force, undefined, promotable),
+      drain: (sessionID, force, promotable) =>
+        drain(sessionID, force, undefined, promotable).pipe(
+          Effect.map((result) => {
+            if (result._tag !== "Suspended") return
+            suspensions.set(sessionID, result)
+            return false
+          }),
+        ),
       // One terminal observation per busy period, covering every coalesced drain.
       settled: (sessionID, exit, reason) =>
         reportLifecycle(
           sessionID,
           Effect.gen(function* () {
+            const suspended = suspensions.get(sessionID)
+            suspensions.delete(sessionID)
+            if (suspended && Exit.isSuccess(exit)) {
+              yield* bus.publish(
+                SessionEvent.Execution.Suspended,
+                {
+                  sessionID,
+                  reason: suspended.reason,
+                },
+                releaseOnCommit(sessionID),
+              )
+              return
+            }
             const outcome = terminal(exit, reason)
             if (outcome.type === "succeeded") {
               yield* bus.publish(SessionEvent.Execution.Succeeded, { sessionID }, releaseOnCommit(sessionID))

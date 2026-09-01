@@ -945,6 +945,16 @@ export function createData(config: CreateDataInput) {
           tool.state = { status: "running", input: event.data.input, metadata: {} }
         })
         return
+      case "session.tool.waiting-client":
+        message.update(event.data.sessionID, (draft, index) => {
+          const match = message.latestTool(
+            message.assistant(draft, index, event.data.assistantMessageID),
+            event.data.id,
+          )
+          if (match?.state.status !== "running") return
+          match.state = { status: "waiting-client", input: match.state.input }
+        })
+        return
       case "session.tool.progress":
         message.editTool(event.data.sessionID, event.data.assistantMessageID, event.data.id, (tool) => {
           if (tool.state.status === "running") tool.state.metadata = event.data.metadata
@@ -952,7 +962,7 @@ export function createData(config: CreateDataInput) {
         return
       case "session.tool.success":
         message.editTool(event.data.sessionID, event.data.assistantMessageID, event.data.id, (tool) => {
-          if (tool.state.status !== "running") return
+          if (tool.state.status !== "running" && tool.state.status !== "waiting-client") return
           tool.state = {
             status: "completed",
             input: tool.state.input,
@@ -966,7 +976,7 @@ export function createData(config: CreateDataInput) {
         return
       case "session.tool.failed":
         message.editTool(event.data.sessionID, event.data.assistantMessageID, event.data.id, (tool) => {
-          if (tool.state.status !== "streaming" && tool.state.status !== "running") return
+          if (tool.state.status !== "streaming" && tool.state.status !== "running" && tool.state.status !== "waiting-client") return
           tool.state = {
             status: "error",
             error: event.data.error,
@@ -1025,12 +1035,13 @@ export function createData(config: CreateDataInput) {
       case "session.execution.succeeded":
       case "session.execution.failed":
       case "session.execution.interrupted":
+      case "session.execution.suspended":
         setSessionActive(event.data.sessionID, "idle")
         message.update(event.data.sessionID, (draft) => {
           const currentAssistant = message.activeAssistant(draft)
           if (currentAssistant) currentAssistant.retry = undefined
         })
-        if (event.type === "session.execution.interrupted" && event.data.reason === "shutdown") return
+        if (event.type === "session.execution.suspended" || (event.type === "session.execution.interrupted" && event.data.reason === "shutdown")) return
         // Mirror the projected idle marker so turn boundaries match before the next message read.
         message.insert(event.data.sessionID, {
           id: messageIDFromEvent(event.id),

@@ -85,6 +85,15 @@ export class InboxConflictError extends Schema.TaggedError<InboxConflictError>()
   inboxID: SessionMessage.ID,
 }) {}
 
+export class ClientToolResultConflictError extends Schema.TaggedError<ClientToolResultConflictError>()(
+  "Session.ClientToolResultConflictError",
+  {
+    sessionID: SessionSchema.ID,
+    toolCallID: Schema.String,
+    message: Schema.String,
+  },
+) {}
+
 export class SkillNotFoundError extends Schema.TaggedError<SkillNotFoundError>()("Session.SkillNotFoundError", {
   skill: Skill.ID,
 }) {}

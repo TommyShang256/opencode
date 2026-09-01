@@ -20,6 +20,10 @@ export type Continuation = { readonly step: number }
 
 export type DrainResult = Data.TaggedEnum<{
   Complete: {}
+  Suspended: {
+    readonly reason: "client-tool"
+    readonly calls: ReadonlyArray<{ readonly id: string; readonly name: string; readonly input: unknown }>
+  }
   Moved: { readonly continuation?: Continuation }
   Reloaded: { readonly force: boolean; readonly continuation?: Continuation }
 }>

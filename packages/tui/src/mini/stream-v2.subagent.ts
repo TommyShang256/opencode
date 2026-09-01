@@ -316,6 +316,12 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     }
     const current = child.tools.get(key)
     const output = toolOutputText(part.name, toolDisplayContent(part.state))
+    if (part.state.status === "waiting-client") {
+      if (!current || current.part.state.status === "streaming")
+        setFrame(child, frame, toolCommit(part, messageID, "start", undefined, input.directory))
+      child.tools.set(key, { part })
+      return
+    }
     if (part.state.status === "running") {
       const ready = part.name !== "websearch" || typeof part.state.metadata.provider === "string"
       const awaitingProvider =
@@ -810,6 +816,17 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
       notifyDetail(child)
       return
     }
+    if (event.type === "session.tool.waiting-client") {
+      const source = sourceKey(event.data.assistantMessageID, event.data.id)
+      const found = child.tools.get(source)
+      if (!found || found.part.state.status !== "running") return
+      childTool(
+        child,
+        { ...found.part, state: { status: "waiting-client", input: found.part.state.input } },
+        event.data.assistantMessageID,
+      )
+      return
+    }
     if (event.type === "session.tool.progress") {
       const key = sourceKey(event.data.assistantMessageID, event.data.id)
       if (child.finishedTools.has(key)) return
@@ -923,14 +940,17 @@ export function createSubagentTracker(input: SubagentTrackerInput): SubagentTrac
     if (
       event.type === "session.execution.succeeded" ||
       event.type === "session.execution.failed" ||
-      event.type === "session.execution.interrupted"
+      event.type === "session.execution.interrupted" ||
+      event.type === "session.execution.suspended"
     ) {
       child.status =
         event.type === "session.execution.succeeded"
           ? "completed"
-          : event.type === "session.execution.interrupted"
-            ? "cancelled"
-            : "error"
+          : event.type === "session.execution.suspended"
+            ? "running"
+            : event.type === "session.execution.interrupted"
+              ? "cancelled"
+              : "error"
       touch(child, event.created)
       input.emit()
     }
