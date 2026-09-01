@@ -18,6 +18,55 @@ describe("ShellParse", () => {
     })
   })
 
+  test.each([false, true])(
+    "detects the reported rm and follow-up command before execution (portable=%s)",
+    async (portable) => {
+      const result = await Effect.runPromise(
+        ShellParse.scan("rm sample-temp-1787893808.txt && ls -la", "/bin/bash", "/workspace", { portable }),
+      )
+      expect(result).toMatchObject({
+        commands: [
+          { resource: "rm sample-temp-1787893808.txt", save: "rm *" },
+          { resource: "ls -la", save: "ls *" },
+        ],
+        deletions: ["/workspace/sample-temp-1787893808.txt"],
+      })
+    },
+  )
+
+  test.each([false, true])("detects common wrapped and indirect delete commands (portable=%s)", async (portable) => {
+    const cases = [
+      ["command -- rm wrapped.txt", ["/workspace/wrapped.txt"]],
+      ["env MODE=safe /bin/rm env-wrapped.txt", ["/workspace/env-wrapped.txt"]],
+      ["env -u MODE rm env-unset-wrapped.txt", ["/workspace/env-unset-wrapped.txt"]],
+      ["busybox rm busybox-wrapped.txt", ["/workspace/busybox-wrapped.txt"]],
+      ["sudo -u ubuntu rm privileged.txt", ["/workspace/privileged.txt"]],
+      ["doas rmdir privileged-dir", ["/workspace/privileged-dir"]],
+      ["sh -c 'rm nested.txt && ls -la'", ["/workspace/nested.txt"]],
+      ["eval 'rmdir nested-dir'", ["/workspace/nested-dir"]],
+      ["git rm tracked.txt", ["/workspace/tracked.txt"]],
+      ["git -C repo clean -fd", ["/workspace/repo"]],
+      ["git -C repo rm tracked.txt", ["/workspace/repo/tracked.txt"]],
+      ["printf '%s\\n' queued.txt | xargs rm", ["/workspace"]],
+      ["find tree -type f -exec rm {} +", ["/workspace/tree"]],
+    ] as const
+
+    for (const [command, deletions] of cases) {
+      const result = await Effect.runPromise(ShellParse.scan(command, "/bin/bash", "/workspace", { portable }))
+      expect(result.deletions).toEqual(deletions)
+    }
+  })
+
+  test.each([false, true])(
+    "does not infer nested deletes from quoted ordinary output (portable=%s)",
+    async (portable) => {
+      const result = await Effect.runPromise(
+        ShellParse.scan('sh -c \'printf \\"%s\\" \\"rm ordinary.txt\\"\'', "/bin/bash", "/workspace", { portable }),
+      )
+      expect(result.deletions).toBeUndefined()
+    },
+  )
+
   test("portable scanning preserves supported command resources and directories", async () => {
     const commands = [
       "git status && npm run test -- --watch",
@@ -138,9 +187,7 @@ describe("ShellParse", () => {
     expect(bash.directories).toEqual([path.join(os.homedir(), "src")])
 
     const backslash = await Effect.runPromise(ShellParse.scan("cd '~\\src'", "/bin/bash", "/workspace"))
-    expect(backslash.directories).toEqual(
-      process.platform === "win32" ? [path.join(os.homedir(), "src")] : ["~\\src"],
-    )
+    expect(backslash.directories).toEqual(process.platform === "win32" ? [path.join(os.homedir(), "src")] : ["~\\src"])
 
     const powershell = await Effect.runPromise(
       ShellParse.scan('Set-Location "$PWD/src"; Set-Location $PSHOME', "/usr/local/bin/pwsh", "/workspace"),

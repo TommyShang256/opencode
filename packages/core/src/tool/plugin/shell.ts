@@ -131,6 +131,22 @@ export const Plugin = {
         }),
       )
       yield* access.authorizeExternal([target, ...directories], context)
+      const deletions = [...new Set(parsed.deletions)]
+      if (deletions.length > 0)
+        yield* permission.assert({
+          action: "delete",
+          resources: deletions,
+          save: ["*"],
+          metadata: {
+            command: invocation.command,
+            workdir: target.absolute,
+            filepath: deletions.join(", "),
+            preview: deletions.map((item) => `Delete ${item}`).join("\n"),
+          },
+          sessionID: context.sessionID,
+          agent: context.agent,
+          source,
+        })
       if (parsed.commands.length > 0)
         yield* permission.assert({
           action: name,

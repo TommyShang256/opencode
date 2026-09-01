@@ -258,6 +258,16 @@ describe("PatchTool", () => {
                 expect(assertions).toMatchObject([
                   {
                     sessionID,
+                    action: "delete",
+                    resources: ["remove.txt"],
+                    save: ["*"],
+                    metadata: {
+                      filepath: "remove.txt",
+                      files: expect.any(Array),
+                    },
+                  },
+                  {
+                    sessionID,
                     action: "edit",
                     resources: ["nested/new.txt", "update.txt", "remove.txt"],
                     save: ["*"],
@@ -318,6 +328,37 @@ describe("PatchTool", () => {
           { file: "trailing.txt", additions: 0, deletions: 1 },
           { file: "unterminated.txt", additions: 0, deletions: 1 },
         ])
+      }),
+    ),
+  )
+
+  it.live("keeps every file when batch delete permission is rejected", () =>
+    withTempTool((directory, registry) =>
+      Effect.gen(function* () {
+        const first = path.join(directory, "first.txt")
+        const second = path.join(directory, "second.txt")
+        yield* Effect.promise(() => Promise.all([fs.writeFile(first, "first\n"), fs.writeFile(second, "second\n")]))
+        denyAction = "delete"
+        failRemoveTarget = "first.txt"
+
+        const settled = yield* executeTool(
+          registry,
+          call("*** Begin Patch\n*** Delete File: first.txt\n*** Delete File: second.txt\n*** End Patch"),
+        )
+
+        expect(settled).toMatchObject({
+          status: "error",
+          error: { message: expect.stringContaining("Permission denied: delete") },
+        })
+        expect(assertions).toMatchObject([
+          {
+            action: "delete",
+            resources: ["first.txt", "second.txt"],
+            save: ["*"],
+          },
+        ])
+        expect(yield* exists(first)).toBe(true)
+        expect(yield* exists(second)).toBe(true)
       }),
     ),
   )
@@ -528,7 +569,7 @@ describe("PatchTool", () => {
     ),
   )
 
-  it.live("includes the move destination in edit permission resources", () =>
+  it.live("requires delete approval and includes the move destination in edit permission resources", () =>
     withTempTool((directory, registry) =>
       Effect.gen(function* () {
         const source = path.join(directory, "old", "name.txt")
@@ -541,6 +582,10 @@ describe("PatchTool", () => {
           ),
         )
         expect(assertions).toMatchObject([
+          {
+            action: "delete",
+            resources: ["old/name.txt", "renamed/dir/name.txt"],
+          },
           {
             action: "edit",
             resources: ["old/name.txt", "renamed/dir/name.txt"],
@@ -575,7 +620,10 @@ describe("PatchTool", () => {
                     status: "completed",
                     output: { applied: [{ resource: "moved.txt" }] },
                   })
-                  expect(assertions).toMatchObject([{ action: "edit", resources: ["old.txt", "moved.txt"] }])
+                  expect(assertions).toMatchObject([
+                    { action: "delete", resources: ["old.txt", "moved.txt"] },
+                    { action: "edit", resources: ["old.txt", "moved.txt"] },
+                  ])
                 }),
               tmp.path,
             ),
@@ -1101,6 +1149,10 @@ describe("PatchTool", () => {
                     resources: [path.join(outside.path, "*").replaceAll("\\", "/")],
                     save: [path.join(outside.path, "*").replaceAll("\\", "/")],
                     metadata: { filepath: destination, parentDir: outside.path },
+                  },
+                  {
+                    action: "delete",
+                    resources: ["source.txt", destination.replaceAll("\\", "/")],
                   },
                   {
                     action: "edit",

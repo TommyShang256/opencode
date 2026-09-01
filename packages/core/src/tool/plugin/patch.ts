@@ -193,6 +193,28 @@ export const Plugin = {
                 change.target,
                 ...(change.type === "update" && change.moveTarget ? [change.moveTarget] : []),
               ])
+              const deleteTargets = [
+                ...new Set(
+                  prepared.flatMap((change) => {
+                    if (change.type === "delete") return [change.target.resource]
+                    if (change.type !== "update" || !change.moveTarget) return []
+                    return [change.target.resource, change.moveTarget.resource]
+                  }),
+                ),
+              ]
+              if (deleteTargets.length > 0)
+                yield* permission.assert({
+                  action: "delete",
+                  resources: deleteTargets,
+                  save: ["*"],
+                  metadata: {
+                    filepath: deleteTargets.join(", "),
+                    files: patchFiles.filter((file) => deleteTargets.includes(file.file)),
+                  },
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source,
+                })
               yield* permission.assert({
                 action: "edit",
                 resources: [...new Set(targets.map((target) => target.resource))],
