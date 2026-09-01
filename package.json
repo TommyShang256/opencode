@@ -17,6 +17,8 @@
     "dev:stats": "bun sst shell --stage=production -- bun run --cwd packages/stats/app dev",
     "dev:www": "bun run --cwd services/www dev",
     "dev:storybook": "bun --cwd packages/storybook storybook",
+    "build:server": "bun --smol packages/server/script/build-standalone.ts",
+    "build:server:lock": "bun --smol packages/server/script/update-standalone-lock.ts",
     "bench:devex": "bun run --cwd packages/app test:bench:devex",
     "lint": "oxlint",
     "lint:effect-patterns": "ast-grep scan -c script/ast-grep/sgconfig.yml packages/util/src packages/core/src packages/server/src packages/protocol/src packages/cli/src",
