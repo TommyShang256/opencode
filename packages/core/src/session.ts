@@ -211,6 +211,9 @@ export interface Interface {
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
   readonly background: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly resume: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError | SessionRunner.RunError>
+  readonly clientToolResults: (
+    input: Parameters<Session.Handle["clientToolResults"]>[0] & { sessionID: SessionSchema.ID },
+  ) => ReturnType<Session.Handle["clientToolResults"]>
   readonly interrupt: (sessionID: SessionSchema.ID, options?: { readonly continue?: boolean }) => Effect.Effect<boolean>
   readonly synthetic: (
     input: Parameters<Session.Handle["synthetic"]>[0] & { sessionID: SessionSchema.ID },
@@ -508,6 +511,7 @@ const layer = Layer.effect(
           .pipe(Effect.catchTag("Session.SyntheticConflictError", Effect.die))
       }),
       resume: (sessionID) => sessions.forSession(sessionID).resume(),
+      clientToolResults: (input) => sessions.forSession(input.sessionID).clientToolResults(input),
       synthetic: (input) => sessions.forSession(input.sessionID).synthetic(input),
       interrupt: (sessionID, options) => sessions.forSession(sessionID).interrupt(options),
       revert: {

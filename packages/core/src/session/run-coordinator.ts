@@ -53,7 +53,8 @@ type Execution<E, Reason> = {
  * ```
  */
 export const make = <Key, E, Reason = never>(options: {
-  readonly drain: (key: Key, force: boolean, scope: Promotable) => Effect.Effect<void, E>
+  /** Returning false halts this busy period normally and discards wakes recorded before the halt. */
+  readonly drain: (key: Key, force: boolean, scope: Promotable) => Effect.Effect<void | boolean, E>
   /** Runs once when a process-local busy period begins, before its first drain. */
   readonly started?: (key: Key) => Effect.Effect<void>
   /**
@@ -68,8 +69,12 @@ export const make = <Key, E, Reason = never>(options: {
 
     const loop = (key: Key, execution: Execution<E, Reason>, force: boolean): Effect.Effect<void, E> =>
       Effect.suspend(() => options.drain(key, force, execution.scope)).pipe(
-        Effect.andThen(
+        Effect.flatMap((resume) =>
           Effect.suspend(() => {
+            if (resume === false) {
+              execution.pendingWake = undefined
+              return Effect.void
+            }
             if (execution.stopping || execution.pendingWake === undefined) return Effect.void
             execution.scope = execution.pendingWake
             execution.pendingWake = undefined

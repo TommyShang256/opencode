@@ -236,6 +236,16 @@ export namespace Execution {
     schema: { ...Base, reason: Schema.Literals(["user", "shutdown", "superseded"]) },
   })
   export type Interrupted = typeof Interrupted.Type
+
+  export const Suspended = Event.durable({
+    type: "session.execution.suspended",
+    ...options,
+    schema: {
+      ...Base,
+      reason: Schema.tag("client-tool"),
+    },
+  })
+  export type Suspended = typeof Suspended.Type
 }
 
 export const InstructionsUpdated = Event.durable({
@@ -494,6 +504,13 @@ export namespace Tool {
   })
   export type Called = typeof Called.Type
 
+  export const WaitingClient = Event.durable({
+    type: "session.tool.waiting-client",
+    ...options,
+    schema: ToolBase,
+  })
+  export type WaitingClient = typeof WaitingClient.Type
+
   /** Live replacement metadata for a running tool. */
   export const Progress = Event.ephemeral({
     type: "session.tool.progress",
@@ -636,6 +653,7 @@ export const Definitions = Event.inventory(
   Execution.Succeeded,
   Execution.Failed,
   Execution.Interrupted,
+  Execution.Suspended,
   InstructionsUpdated,
   Synthetic,
   Skill.Activated,
@@ -655,6 +673,7 @@ export const Definitions = Event.inventory(
   Tool.Input.Delta,
   Tool.Input.Ended,
   Tool.Called,
+  Tool.WaitingClient,
   Tool.Progress,
   Tool.Success,
   Tool.Failed,

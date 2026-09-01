@@ -307,6 +307,10 @@ export async function streamTurn(input: {
         }
         continue
       }
+      if (event.type === "session.execution.suspended") {
+        if (!child) return "succeeded" as const
+        continue
+      }
       if (event.type === "session.execution.succeeded") {
         if (!child) return "succeeded" as const
         openChildren.delete(child.id)

@@ -37,6 +37,15 @@ export class UnauthorizedError extends Schema.TaggedError<UnauthorizedError>()(
   { httpApiStatus: 401 },
 ) {}
 
+export class PermissionDeniedError extends Schema.TaggedError<PermissionDeniedError>()(
+  "PermissionDeniedError",
+  {
+    message: Schema.String,
+    permission: Schema.optional(Schema.String),
+  },
+  { httpApiStatus: 403 },
+) {}
+
 export class ConflictError extends Schema.TaggedError<ConflictError>()(
   "ConflictError",
   {

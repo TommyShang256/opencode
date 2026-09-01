@@ -438,7 +438,7 @@ const layer = Layer.unwrap(
             .drain({ sessionID, force, continuation })
             .pipe(
               Effect.flatMap((result) =>
-                result._tag === "Complete" ? Effect.void : drain(sessionID, false, result.continuation),
+                result._tag === "Moved" ? drain(sessionID, false, result.continuation) : Effect.void,
               ),
             )
         }
@@ -1731,7 +1731,7 @@ describe("SessionRunnerLLM", () => {
     yield* s.resume
 
     expect(s.requests.at(-1)?.system.map((part) => part.text)).toEqual([
-      expect.stringContaining("You are OpenCode, You and the user share the same workspace"),
+      expect.stringContaining("You are dataagent, You and the user share the same workspace"),
       "Initial context",
     ])
   })
@@ -1751,7 +1751,7 @@ describe("SessionRunnerLLM", () => {
     yield* s.resume
 
     expect(s.requests.at(-1)?.system.map((part) => part.text)).toEqual([
-      expect.stringContaining("You are OpenCode, You and the user share the same workspace"),
+      expect.stringContaining("You are dataagent, You and the user share the same workspace"),
       "Initial context",
     ])
   })
@@ -2789,6 +2789,175 @@ describe("SessionRunnerLLM", () => {
       "session.tool.called.1",
       "session.tool.success.2",
       "session.step.ended.1",
+    ])
+  })
+
+  scenario("suspends for a client-owned native tool and resumes with its original result", function* (s) {
+    yield* s.session.prompt({
+      sessionID,
+      text: "Present the artifact",
+      clientTools: [
+        {
+          name: "present_artifact",
+          description: "Present an artifact in the browser",
+          inputSchema: {
+            type: "object",
+            properties: { artifactId: { type: "string" } },
+            required: ["artifactId"],
+            additionalProperties: false,
+          },
+        },
+      ],
+      resume: false,
+    })
+    yield* s.llm.push(
+      TestLLM.tool("call-present", "present_artifact", { artifactId: "artifact-1" }),
+      TestLLM.text("Artifact presented", "text-final"),
+    )
+
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(1)
+    expect(s.requests[0]?.tools).toContainEqual(
+      expect.objectContaining({
+        name: "present_artifact",
+        description: "Present an artifact in the browser",
+        inputSchema: expect.objectContaining({ type: "object" }),
+      }),
+    )
+    expect(s.executions).toEqual([])
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({
+        type: "user",
+        clientTools: [expect.objectContaining({ name: "present_artifact" })],
+      }),
+      Expected.assistant({ finish: "tool-calls" }, [
+        {
+          type: "tool",
+          id: "call-present",
+          name: "present_artifact",
+          state: { status: "waiting-client", input: { artifactId: "artifact-1" } },
+        },
+      ]),
+    ])
+
+    yield* s.resume
+    expect(s.requests).toHaveLength(1)
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({ type: "user" }),
+      Expected.assistant({}, [{ type: "tool", id: "call-present", state: { status: "waiting-client" } }]),
+    ])
+
+    yield* s.session.clientToolResults({
+      sessionID,
+      results: [{ toolCallId: "call-present", status: "completed", output: { status: "rendered" } }],
+    })
+
+    expect(s.requests).toHaveLength(2)
+    expect(messageRoles(s.requests[1])).toEqual(["user", "assistant", "tool"])
+    expect(s.requests[1]?.messages[1]?.content).toMatchObject([
+      {
+        type: "tool-call",
+        id: "call-present",
+        name: "present_artifact",
+        input: { artifactId: "artifact-1" },
+      },
+    ])
+    expect(s.requests[1]?.messages[2]?.content).toMatchObject([
+      {
+        type: "tool-result",
+        id: "call-present",
+        name: "present_artifact",
+        result: { type: "text", value: '{"status":"rendered"}' },
+      },
+    ])
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({ type: "user" }),
+      Expected.assistant({ finish: "tool-calls" }, [
+        Expected.completedTool(
+          { id: "call-present", name: "present_artifact" },
+          {
+            input: { artifactId: "artifact-1" },
+            content: [Expected.text('{"status":"rendered"}')],
+          },
+        ),
+      ]),
+      Expected.assistant({ finish: "stop" }, [Expected.text("Artifact presented")]),
+    ])
+  })
+
+  scenario("advertises client tools only for the prompt that declared them", function* (s) {
+    const registry = yield* Tool.Service
+    yield* s.session.prompt({
+      sessionID,
+      text: "Prompt with browser tools",
+      clientTools: [
+        {
+          name: "present_artifact",
+          description: "Present an artifact in the browser",
+          inputSchema: { type: "object" },
+        },
+      ],
+      resume: false,
+    })
+    yield* s.llm.push(TestLLM.text("No tool needed", "text-first"))
+    yield* s.resume
+
+    yield* s.admit("Prompt without browser tools")
+    yield* s.llm.push(TestLLM.text("Still no tool needed", "text-second"))
+    yield* s.resume
+
+    expect(s.requests[0]?.tools.map((tool) => tool.name)).toContain("present_artifact")
+    expect(s.requests[1]?.tools.map((tool) => tool.name)).not.toContain("present_artifact")
+    expect((yield* registry.snapshot()).definitions.map((tool) => tool.name)).not.toContain("present_artifact")
+  })
+
+  scenario("collects every client tool call before suspending the provider response", function* (s) {
+    yield* s.session.prompt({
+      sessionID,
+      text: "Present both artifacts",
+      clientTools: [
+        {
+          name: "present_artifact",
+          description: "Present an artifact in the browser",
+          inputSchema: { type: "object" },
+        },
+      ],
+      resume: false,
+    })
+    yield* s.llm.push(
+      TestLLM.toolCalls(
+        LLMEvent.toolCall({
+          id: "call-present-1",
+          name: "present_artifact",
+          input: { artifactId: "artifact-1" },
+        }),
+        LLMEvent.toolCall({
+          id: "call-present-2",
+          name: "present_artifact",
+          input: { artifactId: "artifact-2" },
+        }),
+      ),
+    )
+
+    yield* s.resume
+
+    expect(s.requests).toHaveLength(1)
+    expect(s.executions).toEqual([])
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({ type: "user" }),
+      Expected.assistant({ finish: "tool-calls" }, [
+        {
+          type: "tool",
+          id: "call-present-1",
+          state: { status: "waiting-client", input: { artifactId: "artifact-1" } },
+        },
+        {
+          type: "tool",
+          id: "call-present-2",
+          state: { status: "waiting-client", input: { artifactId: "artifact-2" } },
+        },
+      ]),
     ])
   })
 

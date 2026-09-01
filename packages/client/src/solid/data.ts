@@ -915,6 +915,16 @@ export function createData(config: CreateDataInput) {
           match.state = { status: "running", input: event.data.input, metadata: {} }
         })
         return
+      case "session.tool.waiting-client":
+        message.update(event.data.sessionID, (draft, index) => {
+          const match = message.latestTool(
+            message.assistant(draft, index, event.data.assistantMessageID),
+            event.data.id,
+          )
+          if (match?.state.status !== "running") return
+          match.state = { status: "waiting-client", input: match.state.input }
+        })
+        return
       case "session.tool.progress":
         message.update(event.data.sessionID, (draft, index) => {
           const match = message.latestTool(
@@ -931,7 +941,7 @@ export function createData(config: CreateDataInput) {
             message.assistant(draft, index, event.data.assistantMessageID),
             event.data.id,
           )
-          if (match?.state.status !== "running") return
+          if (match?.state.status !== "running" && match?.state.status !== "waiting-client") return
           match.state = {
             status: "completed",
             input: match.state.input,
@@ -949,7 +959,13 @@ export function createData(config: CreateDataInput) {
             message.assistant(draft, index, event.data.assistantMessageID),
             event.data.id,
           )
-          if (!match || (match.state.status !== "streaming" && match.state.status !== "running")) return
+          if (
+            !match ||
+            (match.state.status !== "streaming" &&
+              match.state.status !== "running" &&
+              match.state.status !== "waiting-client")
+          )
+            return
           match.state = {
             status: "error",
             error: event.data.error,
@@ -1020,6 +1036,7 @@ export function createData(config: CreateDataInput) {
       case "session.execution.succeeded":
       case "session.execution.failed":
       case "session.execution.interrupted":
+      case "session.execution.suspended":
         setSessionActive(event.data.sessionID, "idle")
         message.update(event.data.sessionID, (draft) => {
           const currentAssistant = message.activeAssistant(draft)

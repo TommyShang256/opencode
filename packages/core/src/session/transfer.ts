@@ -236,6 +236,11 @@ function sanitizeMessage(message: SessionMessage.Info): SessionMessage.Info {
           ? { ...skill.mention, text: redact("skill-mention", String(index), skill.mention.text) }
           : undefined,
       })),
+      clientTools: message.clientTools?.map((tool, index) => ({
+        ...tool,
+        description: redact("client-tool-description", String(index), tool.description),
+        inputSchema: { redacted: `client-tool-schema:${index}` },
+      })),
     }
   if (message.type === "synthetic")
     return {
@@ -305,6 +310,7 @@ function sanitizeToolState(id: string, state: SessionMessage.ToolState): Session
   if (state.status === "streaming") return { ...state, input: redact("tool-input", id, state.input) }
   if (state.status === "running")
     return { ...state, input: { redacted: `tool-input:${id}` }, metadata: { redacted: `tool-metadata:${id}` } }
+  if (state.status === "waiting-client") return { ...state, input: { redacted: `tool-input:${id}` } }
   const meta = state.metadata === undefined ? undefined : { redacted: `tool-metadata:${id}` }
   if (state.status === "completed")
     return {

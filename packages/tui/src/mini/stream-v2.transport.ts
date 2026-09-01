@@ -660,6 +660,16 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     const prefix = current ? output.startsWith(current.output) : false
     const version = current && !prefix ? current.version + 1 : (current?.version ?? 0)
     const delta = current && prefix ? output.slice(current.output.length) : output
+    if (part.state.status === "waiting-client") {
+      const started = current?.started === true
+      if (render && !started)
+        write([toolCommit(part, messageID, "start", undefined, input.location?.directory, version)], {
+          phase: "running",
+          status: `waiting for client ${part.name}`,
+        })
+      state.tools.set(key, { part, output, version, started: started || render })
+      return
+    }
     if (part.state.status === "running") {
       const started = current?.started === true
       const ready = part.name !== "websearch" || typeof part.state.metadata.provider === "string"
@@ -1240,6 +1250,15 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
       renderTool(event.data.assistantMessageID, item)
       return
     }
+    if (event.type === "session.tool.waiting-client") {
+      const current = state.tools.get(streamPartKey(event.data.assistantMessageID, event.data.id))
+      if (!current || current.part.state.status !== "running") return
+      renderTool(event.data.assistantMessageID, {
+        ...current.part,
+        state: { status: "waiting-client", input: current.part.state.input },
+      })
+      return
+    }
     if (event.type === "session.tool.progress") {
       const key = streamPartKey(event.data.assistantMessageID, event.data.id)
       if (state.finishedTools.has(key)) return
@@ -1359,7 +1378,8 @@ export async function createSessionTransport(input: StreamInput): Promise<Sessio
     if (
       event.type === "session.execution.succeeded" ||
       event.type === "session.execution.failed" ||
-      event.type === "session.execution.interrupted"
+      event.type === "session.execution.interrupted" ||
+      event.type === "session.execution.suspended"
     ) {
       state.executionEpoch++
       paintIdle("")

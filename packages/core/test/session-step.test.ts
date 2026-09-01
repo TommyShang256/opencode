@@ -108,6 +108,7 @@ for (const fixture of [
             retry: () => Effect.void,
             request: LLM.request({ model: model.model, prompt: "Run one tool", toolChoice: fixture.toolChoice }),
             options: {},
+            toolTarget: () => "local",
             executeTool: () =>
               Effect.sync(() => {
                 executions++

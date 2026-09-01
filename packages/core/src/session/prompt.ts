@@ -21,6 +21,7 @@ export type Input = {
   files?: PromptInput.Prompt["files"]
   agents?: PromptInput.Prompt["agents"]
   skills?: PromptInput.Prompt["skills"]
+  clientTools?: PromptInput.Prompt["clientTools"]
   metadata?: Record<string, unknown>
   delivery?: SessionInbox.Delivery
 }
@@ -46,6 +47,7 @@ export const make = Effect.fn("SessionPrompt.make")(function* () {
         files: request.input.files?.slice(),
         agents: request.input.agents?.slice(),
         skills: request.input.skills?.slice(),
+        clientTools: request.input.clientTools?.slice(),
       }),
       metadata: structuredClone(request.input.metadata),
       delivery: request.input.delivery ?? "steer",
@@ -82,6 +84,7 @@ export const make = Effect.fn("SessionPrompt.make")(function* () {
           agents: input.agents,
           files,
           skills: selected?.length ? selected : undefined,
+          clientTools: input.clientTools,
         }),
         metadata: event.metadata,
       }),

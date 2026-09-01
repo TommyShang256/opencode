@@ -126,6 +126,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
       "session.execution.succeeded": () => clearCurrentRetry,
       "session.execution.failed": () => clearCurrentRetry,
       "session.execution.interrupted": () => clearCurrentRetry,
+      "session.execution.suspended": () => clearCurrentRetry,
       "session.instructions.updated": (event) => {
         if (event.data.text === undefined) return Effect.void
         return adapter.appendMessage(
@@ -317,12 +318,25 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
           }
         })
       },
+      "session.tool.waiting-client": (event) => {
+        return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
+          const match = latestTool(draft, event.data.id)
+          if (match?.state.status === "running") {
+            match.state = castDraft(
+              SessionMessage.ToolStateWaitingClient.make({
+                status: "waiting-client",
+                input: match.state.input,
+              }),
+            )
+          }
+        })
+      },
       // Terminal tool events are self-contained; projection is a direct copy and
       // never reaches into ephemeral progress history.
       "session.tool.success": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestTool(draft, event.data.id)
-          if (match && match.state.status === "running") {
+          if (match && (match.state.status === "running" || match.state.status === "waiting-client")) {
             match.executed = event.data.executed || match.executed === true
             match.providerResultState = event.data.resultState
             match.time.completed = created
@@ -340,7 +354,12 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
       "session.tool.failed": (event) => {
         return updateOwnedAssistant(event.data.assistantMessageID, (draft) => {
           const match = latestTool(draft, event.data.id)
-          if (match && (match.state.status === "streaming" || match.state.status === "running")) {
+          if (
+            match &&
+            (match.state.status === "streaming" ||
+              match.state.status === "running" ||
+              match.state.status === "waiting-client")
+          ) {
             match.executed = event.data.executed || match.executed === true
             match.providerResultState = event.data.resultState
             match.time.completed = created

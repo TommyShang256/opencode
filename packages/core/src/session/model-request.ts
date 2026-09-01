@@ -1,6 +1,6 @@
 export * as SessionModelRequest from "./model-request.js"
 
-import { HttpOptions, LanguageModel, LLM, LLMRequest, Message, SystemPart } from "@opencode-ai/ai"
+import { HttpOptions, LanguageModel, LLM, LLMRequest, Message, SystemPart, ToolDefinition } from "@opencode-ai/ai"
 import type { StreamOptions } from "@opencode-ai/ai/route"
 import type { Agent } from "@opencode-ai/schema/agent"
 import type { Model } from "@opencode-ai/schema/model"
@@ -49,6 +49,7 @@ export interface Prepared {
   readonly request: LLMRequest
   readonly options: StreamOptions
   readonly retry: (event: PluginHooks.Domains["session"]["retry"]) => Effect.Effect<void>
+  readonly toolTarget: (name: string) => "local" | "client"
   /**
    * One request-scoped execution operation. Unknown and hook-removed calls
    * fail individually through the same seam.
@@ -63,6 +64,7 @@ interface PrepareInput {
     readonly model: SessionRunnerModel.Resolved
     /** Omitted for requests that carry no tools (title, compaction). */
     readonly tools?: Tool.Snapshot
+    readonly clientTools?: ReadonlyArray<ToolDefinition>
   }
   readonly transcript: {
     readonly system: Array<SystemPart>
@@ -87,8 +89,20 @@ export const baseTranscript = (input: {
   readonly messages: ReadonlyArray<SessionMessage.Info>
 }) => {
   const providerMetadataKey = input.model.model.route.providerMetadataKey ?? input.model.model.provider
+  const clientTools = new Map(
+    (input.messages.findLast((message) => message.type === "user")?.clientTools ?? []).map(
+      (tool) => [tool.name, tool] as const,
+    ),
+  )
   return {
     providerMetadataKey,
+    clientTools: Array.from(clientTools.values(), (tool) =>
+      ToolDefinition.make({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema,
+      }),
+    ),
     system: [
       input.agent.system
         ? input.agent.system
@@ -288,11 +302,14 @@ export const layer = Layer.effect(
         definitions: [],
         execute: () => new Tool.Error({ message: "Tools are not available for this request" }),
       }
-      const registry = new Map(tools.definitions.map((tool) => [tool.name, tool]))
+      const local = new Map(tools.definitions.map((tool) => [tool.name, tool]))
+      const client = new Map((input.scope.clientTools ?? []).map((tool) => [tool.name, tool]))
+      const registry = new Map([...local, ...client])
       // The definition objects we hand to hooks, mapped back to their tools. Hooks rename a
       // tool by moving its definition to a new key; recognizing the object recovers the tool.
       const given = new Map(
-        tools.definitions.map(
+        Array.from(
+          registry.values(),
           (tool) => [{ description: tool.description, input: { ...tool.inputSchema } }, tool] as const,
         ),
       )
@@ -319,6 +336,12 @@ export const layer = Layer.effect(
           if (!tool) return []
           return [[name, { ...tool, description: definition.description, inputSchema: definition.input }] as const]
         }),
+      )
+      const clientNames = new Set(client.keys())
+      const clientTargets = new Set(
+        Array.from(hooked, ([name, tool]) => (clientNames.has(tool.name) ? name : undefined)).filter(
+          (name): name is string => name !== undefined,
+        ),
       )
       const request = yield* applyModelHooks(
         hooks,
@@ -361,15 +384,17 @@ export const layer = Layer.effect(
           ? { webSocket: transport.bind(session.id) }
           : {}),
       }
+      const localDefinitions = new Map(Array.from(hooked).filter(([name]) => !clientTargets.has(name)))
       const executeTool: Prepared["executeTool"] = (input) =>
         tools
-          .execute({ ...input, definitions: hooked })
+          .execute({ ...input, definitions: localDefinitions })
           .pipe(Effect.catchCauseFilter(declineDefect, (decline) => Effect.fail(decline)))
       const retry: Prepared["retry"] = (event) => hooks.trigger("session", "retry", event).pipe(Effect.asVoid)
       return {
         request,
         options,
         retry,
+        toolTarget: (name) => (clientTargets.has(name) ? "client" : "local"),
         executeTool,
       }
     })

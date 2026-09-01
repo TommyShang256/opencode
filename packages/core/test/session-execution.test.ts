@@ -123,6 +123,40 @@ describe("SessionExecution lifecycle", () => {
     }),
   )
 
+  it.effect("publishes a normal client-tool suspension and releases the execution claim", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const bus = yield* Bus.Service
+      const sessionID = Session.ID.make("ses_client_tool_suspended")
+      yield* seedSessions(database, [sessionID])
+
+      const lifecycle: string[] = []
+      yield* bus.project(SessionEvent.Execution.Suspended, (event) =>
+        Effect.sync(() => lifecycle.push(`${event.type}:${event.data.reason}`)),
+      )
+      yield* bus.project(SessionEvent.Execution.Succeeded, (event) => Effect.sync(() => lifecycle.push(event.type)))
+      yield* bus.project(SessionEvent.Execution.Failed, (event) => Effect.sync(() => lifecycle.push(event.type)))
+      yield* bus.project(SessionEvent.Execution.Interrupted, (event) => Effect.sync(() => lifecycle.push(event.type)))
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const context = yield* buildExecution(scope, () =>
+        Effect.succeed(
+          SessionRunner.DrainResult.Suspended({
+            reason: "client-tool",
+            calls: [{ id: "call-present", name: "present_artifact", input: { artifactId: "artifact-1" } }],
+          }),
+        ),
+      )
+      const execution = Context.get(context, SessionExecution.Service)
+
+      yield* execution.resume(sessionID)
+
+      expect(lifecycle).toEqual(["session.execution.suspended:client-tool"])
+      expect(yield* execution.isActive(sessionID)).toBe(false)
+      expect((yield* claims(database))[sessionID]).toBe(false)
+    }),
+  )
+
   it.effect("a user interrupt releases the claim so the turn never resurrects", () =>
     Effect.gen(function* () {
       const database = yield* Database.Service
@@ -1326,7 +1360,9 @@ function attempts(database: Database.Service["Service"], sessionID: Session.ID) 
 /** Builds the local execution layer plus the restart actions against the test harness services. */
 function buildExecution(
   scope: Scope.Closeable,
-  drain: (input: Parameters<SessionRunner.Interface["drain"]>[0]) => Effect.Effect<void, SessionRunner.RunError>,
+  drain: (
+    input: Parameters<SessionRunner.Interface["drain"]>[0],
+  ) => Effect.Effect<void | SessionRunner.DrainResult, SessionRunner.RunError>,
   options?: SessionRestart.Options,
   overrideJobs?: Job.Interface,
 ) {
@@ -1352,7 +1388,7 @@ function buildExecution(
     const runner = Layer.succeed(
       SessionRunner.Service,
       SessionRunner.Service.of({
-        drain: (input) => drain(input).pipe(Effect.as(SessionRunner.DrainResult.Complete())),
+        drain: (input) => drain(input).pipe(Effect.map((result) => result ?? SessionRunner.DrainResult.Complete())),
       }),
     )
     const locations = Layer.effect(

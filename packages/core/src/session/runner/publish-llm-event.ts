@@ -544,6 +544,16 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
 
   const publishTraced = Effect.fn("SessionRunner.publishLLMEvent")(publish)
 
+  const waitForClient = Effect.fnUntraced(function* (id: string) {
+    const tool = tools.get(id)
+    if (!tool?.called || tool.settled) return yield* Effect.die(new Error(`Client wait outside running call: ${id}`))
+    yield* bus.publish(SessionEvent.Tool.WaitingClient, {
+      sessionID: input.sessionID,
+      assistantMessageID,
+      id,
+    })
+  })
+
   const progress = Effect.fnUntraced(function* (id: string, update: Tool.Metadata) {
     const tool = tools.get(id)
     if (!tool?.called || tool.settled) return yield* Effect.die(new Error(`Tool progress outside running call: ${id}`))
@@ -588,6 +598,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       return publishTraced(event)
     },
     progress,
+    waitForClient,
     toolExecution,
     flush,
     failAssistant,
