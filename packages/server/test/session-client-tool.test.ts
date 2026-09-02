@@ -57,6 +57,8 @@ it.live("accepts a client-owned native tool result over the session HTTP API", (
                 sessionID,
                 assistantMessageID,
                 id: "call-present",
+                name: "present_artifact",
+                input: { artifactId: "artifact-1" },
               })
               yield* bus.publish(SessionEvent.Step.Ended, {
                 sessionID,

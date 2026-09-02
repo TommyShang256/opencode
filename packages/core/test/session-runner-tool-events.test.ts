@@ -107,6 +107,23 @@ test("local tool success serializes media base64 once through canonical content"
   })
 })
 
+test("client-tool waiting boundary is independently replayable", async () => {
+  const { published, publisher } = capture()
+  const clientCall = LLMEvent.toolCall({
+    id: "call-present",
+    name: "present_artifact",
+    input: { title: "Olist design", projectPath: "data-applications/olist/02-design/design.md" },
+  })
+  await Effect.runPromise(publisher.publish(clientCall))
+  await Effect.runPromise(publisher.waitForClient(clientCall.id))
+
+  expect(published.find((event) => event.type === "session.tool.waiting-client.1")?.data).toMatchObject({
+    id: "call-present",
+    name: "present_artifact",
+    input: clientCall.input,
+  })
+})
+
 test("provider-executed success derives content and retains provider result state", async () => {
   const { published, publisher } = capture()
   await Effect.runPromise(publisher.publish(LLMEvent.toolCall({ ...call, providerExecuted: true })))
