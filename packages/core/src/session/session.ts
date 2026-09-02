@@ -348,7 +348,16 @@ export const make = Effect.fn("Session.make")(function* () {
     const first = events[0]
     if (!first) return
     yield* bus.publishAll([first, ...events.slice(1)] as [typeof first, ...typeof events])
-    yield* execution.resume(sessionID)
+    // A browser-owned tool result is an admission boundary, not a request to
+    // synchronously wait for the whole resumed turn. The continuation may
+    // immediately wait on a permission/form or run for minutes; keeping this
+    // HTTP call open until that settles deadlocks the Gateway event feed and
+    // turns a valid client result into an upstream timeout. Start the forced
+    // continuation in the host scope and acknowledge once the result is
+    // committed; the execution itself remains durable and observable.
+    yield* execution
+      .resume(sessionID)
+      .pipe(Effect.ignore, Effect.forkIn(scope, { startImmediately: true }), Effect.asVoid)
   }, Effect.uninterruptible)
 
   const synthetic = Effect.fn("Session.synthetic")(

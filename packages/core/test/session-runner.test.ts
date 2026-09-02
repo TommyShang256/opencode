@@ -3723,6 +3723,7 @@ describe("SessionRunnerLLM", () => {
       sessionID,
       results: [{ toolCallId: "call-present", status: "completed", output: { status: "rendered" } }],
     })
+    yield* s.session.wait(sessionID)
 
     expect(s.requests).toHaveLength(2)
     expect(messageRoles(s.requests[1])).toEqual(["user", "assistant", "tool"])
@@ -3755,6 +3756,49 @@ describe("SessionRunnerLLM", () => {
       ]),
       Expected.assistant({ finish: "stop" }, [Expected.text("Artifact presented")]),
     ])
+  })
+
+  scenario("acknowledges a client tool result before its resumed turn settles", function* (s) {
+    const continuation = yield* Deferred.make<void>()
+    yield* s.session.prompt({
+      sessionID,
+      text: "Present the artifact and keep working",
+      clientTools: [{
+        name: "present_artifact",
+        description: "Present an artifact in the browser",
+        inputSchema: { type: "object" },
+      }],
+      resume: false,
+    })
+    yield* s.llm.push(
+      TestLLM.tool("call-present-async", "present_artifact", { artifactId: "artifact-async" }),
+      Stream.fromEffect(Deferred.await(continuation)).pipe(
+        Stream.flatMap(() => Stream.fromIterable(TestLLM.text("Finished", "text-finished"))),
+      ),
+    )
+    yield* s.resume
+
+    const acknowledged = yield* Deferred.make<void>()
+    const submitted = yield* s.session.clientToolResults({
+      sessionID,
+      results: [{ toolCallId: "call-present-async", status: "completed", output: { status: "rendered" } }],
+    }).pipe(Effect.andThen(Deferred.succeed(acknowledged, undefined)), Effect.forkChild)
+    yield* Effect.yieldNow
+    yield* Effect.yieldNow
+
+    const acknowledgedBeforeSettlement = yield* Deferred.isDone(acknowledged)
+    yield* Deferred.succeed(continuation, undefined)
+    yield* s.session.wait(sessionID)
+    yield* Fiber.join(submitted)
+
+    expect(acknowledgedBeforeSettlement).toBe(true)
+    const clientTool = (yield* s.context).flatMap((message) =>
+      message.type === "assistant" ? message.content : [],
+    ).find((content) => content.type === "tool" && content.id === "call-present-async")
+    expect(clientTool).toMatchObject(Expected.completedTool(
+      { id: "call-present-async", name: "present_artifact" },
+      { content: [Expected.text('{"status":"rendered"}')] },
+    ))
   })
 
   scenario("advertises client tools only for the prompt that declared them", function* (s) {
