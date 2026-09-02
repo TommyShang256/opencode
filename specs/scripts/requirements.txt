@@ -1,0 +1,6 @@
+# DIS Data Research - Python Dependencies
+# Install with: pip install -r requirements.txt
+
+openpyxl>=3.0.9
+PyYAML>=6.0
+jieba>=0.42.1
