@@ -2,7 +2,8 @@ export * as SubagentTool from "./subagent.js"
 
 import { ToolFailure } from "@opencode-ai/ai"
 import type { Context } from "@opencode-ai/plugin/effect/plugin"
-import { Effect, Schema, Scope } from "effect"
+import { Tool } from "@opencode-ai/schema/tool"
+import { Effect, Fiber, Schema, Scope } from "effect"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import type { Job } from "../../job.js"
@@ -78,6 +79,35 @@ export const Plugin = {
         .map((part) => part.text)
         .join("")
       return text.length > 0 ? text : NO_TEXT
+    })
+
+    const reportChildProgress = Effect.fn("SubagentTool.reportChildProgress")(function* (
+      sessionID: SessionSchema.ID,
+      progress: Tool.Context["progress"],
+    ) {
+      let fingerprint = ""
+      yield* Effect.gen(function* () {
+        const messages = yield* runtime.session.messages({ sessionID, order: "desc", limit: 20 })
+        const activities = messages
+          .toReversed()
+          .flatMap((message) => {
+            if (message.type !== "assistant") return []
+            return message.content.flatMap((part) => {
+              if (part.type === "tool")
+                return [{ kind: "tool", label: part.name, status: part.state.status }]
+              if (part.type === "text" && part.text.trim())
+                return [{ kind: "text", label: part.text.trim().slice(0, 240), status: "completed" }]
+              return []
+            })
+          })
+          .slice(-6)
+        const next = JSON.stringify(activities)
+        if (next !== fingerprint) {
+          fingerprint = next
+          yield* progress({ sessionID, status: "running", messageCount: messages.length, activities })
+        }
+        yield* Effect.sleep("1 second")
+      }).pipe(Effect.forever)
     })
 
     const notifyWhenDone = Effect.fn("SubagentTool.notifyWhenDone")(function* (
@@ -239,12 +269,16 @@ export const Plugin = {
                 return backgroundResult(child.id)
               }
 
+              const progressFiber = yield* reportChildProgress(child.id, context.progress).pipe(
+                Effect.forkChild({ startImmediately: true }),
+              )
               const result = yield* runtime.job.block({ id: child.id, sessionID: context.sessionID }).pipe(
                 Effect.onInterrupt(() =>
                   Effect.all([runtime.session.interrupt(child.id), runtime.job.cancel(child.id)], {
                     discard: true,
                   }),
                 ),
+                Effect.ensuring(Fiber.interrupt(progressFiber)),
               )
               if (result?.type === "backgrounded") {
                 yield* notifyWhenDone(recovery, result.info.started_at)
