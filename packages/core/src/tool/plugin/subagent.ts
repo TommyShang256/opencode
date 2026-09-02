@@ -3,7 +3,8 @@ export * as SubagentTool from "./subagent.js"
 import { ToolFailure } from "@opencode/ai"
 import type { Context } from "@opencode/plugin/effect/plugin"
 import type { SessionHooks } from "@opencode/plugin/effect/session"
-import { Effect, Predicate, Schema } from "effect"
+import { Tool } from "@opencode/schema/tool"
+import { Effect, Fiber, Predicate, Schema } from "effect"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
 import { Job } from "../../job.js"
@@ -95,6 +96,34 @@ export const Plugin = {
               : `Variant "${ref.variant}" is not available for "${ref.providerID}/${ref.id}". Available: ${model.variants.map((variant) => variant.id).join(", ")}.`,
         })
       return ref
+    })
+
+    const reportChildProgress = Effect.fn("SubagentTool.reportChildProgress")(function* (
+      sessionID: SessionSchema.ID,
+      progress: Tool.Context["progress"],
+    ) {
+      let fingerprint = ""
+      yield* Effect.gen(function* () {
+        const messages = yield* sessions.messages({ sessionID, order: "desc", limit: 20 })
+        const activities = messages
+          .toReversed()
+          .flatMap((message) => {
+            if (message.type !== "assistant") return []
+            return message.content.flatMap((part) => {
+              if (part.type === "tool") return [{ kind: "tool", label: part.name, status: part.state.status }]
+              if (part.type === "text" && part.text.trim())
+                return [{ kind: "text", label: part.text.trim().slice(0, 240), status: "completed" }]
+              return []
+            })
+          })
+          .slice(-6)
+        const next = JSON.stringify(activities)
+        if (next !== fingerprint) {
+          fingerprint = next
+          yield* progress({ sessionID, status: "running", messageCount: messages.length, activities })
+        }
+        yield* Effect.sleep("1 second")
+      }).pipe(Effect.forever)
     })
 
     yield* ctx.tool
@@ -231,12 +260,14 @@ export const Plugin = {
                 return backgroundResult(child.id)
               }
 
+const progressFiber = yield* reportChildProgress(child.id, context.progress).pipe(Effect.forkChild({ startImmediately: true }))
               const result = yield* jobs.block({ id: child.id, sessionID: context.sessionID }).pipe(
                 Effect.onInterrupt(() =>
                   Effect.all([sessions.interrupt(child.id), jobs.cancel(child.id)], {
                     discard: true,
                   }),
                 ),
+                Effect.ensuring(Fiber.interrupt(progressFiber)),
               )
               if (result?.type === "backgrounded") {
                 yield* subagents.notify(recovery, result.info.started_at)
