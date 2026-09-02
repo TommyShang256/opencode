@@ -77,6 +77,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   const deltaBatchInterval = 100
   type ToolState = {
     readonly name: string
+    input?: Record<string, unknown>
     called: boolean
     settled: boolean
     providerExecuted: boolean
@@ -449,6 +450,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
           return yield* Effect.die(new Error(`Tool call name changed for ${event.id}: ${tool.name} -> ${event.name}`))
         if (tool.called) return yield* Effect.die(new Error(`Duplicate tool call: ${event.id}`))
         tool.called = true
+        tool.input = asRecord(event.input)
         tool.providerExecuted = event.providerExecuted === true
         yield* bus.publish(SessionEvent.Tool.Called, {
           sessionID: input.sessionID,
@@ -551,6 +553,8 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       sessionID: input.sessionID,
       assistantMessageID,
       id,
+      name: tool.name,
+      input: tool.input ?? {},
     })
   })
 

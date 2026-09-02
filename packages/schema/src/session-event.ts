@@ -507,7 +507,13 @@ export namespace Tool {
   export const WaitingClient = Event.durable({
     type: "session.tool.waiting-client",
     ...options,
-    schema: ToolBase,
+    schema: {
+      ...ToolBase,
+      // This event is the durable handoff boundary. It must be independently
+      // replayable when earlier live/durable precursor delivery is interrupted.
+      name: Schema.String,
+      input: Schema.Record(Schema.String, Schema.Unknown),
+    },
   })
   export type WaitingClient = typeof WaitingClient.Type
 
