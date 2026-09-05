@@ -54,6 +54,55 @@ export class SessionExpiredError extends Schema.TaggedError<SessionExpiredError>
   override get message() {
     return `MCP server session expired: ${this.server}`
   }
+export interface ToolDefinition {
+  readonly name: string
+  readonly description: string | undefined
+  readonly inputSchema: unknown
+  readonly outputSchema: unknown
+  readonly meta: Record<string, unknown> | undefined
+}
+
+export interface PromptDefinition {
+  readonly name: string
+  readonly description: string | undefined
+  readonly arguments:
+    | ReadonlyArray<{
+        readonly name: string
+        readonly description: string | undefined
+        readonly required: boolean | undefined
+      }>
+    | undefined
+}
+
+export interface PromptMessage {
+  readonly role: string
+  readonly content: unknown
+}
+
+export interface PromptResult {
+  readonly messages: ReadonlyArray<PromptMessage>
+}
+
+export interface ResourceDefinition {
+  readonly name: string
+  readonly uri: string
+  readonly description: string | undefined
+  readonly mimeType: string | undefined
+}
+
+export interface ResourceTemplateDefinition {
+  readonly name: string
+  readonly uriTemplate: string
+  readonly description: string | undefined
+  readonly mimeType: string | undefined
+}
+
+export type ResourceContentPart =
+  | { readonly type: "text"; readonly uri: string; readonly text: string; readonly mimeType: string | undefined }
+  | { readonly type: "blob"; readonly uri: string; readonly blob: string; readonly mimeType: string | undefined }
+
+export interface ReadResourceResult {
+  readonly contents: ReadonlyArray<ResourceContentPart>
 }
 
 export type CallToolContent =
@@ -249,6 +298,36 @@ export const connect = Effect.fnUntraced(function* (
       instructions: client.getInstructions()?.trim() || undefined,
       tools: () =>
         request("list MCP tools", () => client.listTools(undefined, catalog)).pipe(Effect.map((r) => r.tools)),
+        Effect.gen(function* () {
+          if (!client.getServerCapabilities()?.tools) return []
+          const tools = yield* Effect.tryPromise({
+            try: () =>
+              paginate(
+                async (cursor) => {
+                  const params = cursor === undefined ? undefined : { cursor }
+                  try {
+                    return await client.listTools(params, { timeout: catalogTimeout })
+                  } catch (error) {
+                    if (!(error instanceof Error) || !isOutputSchemaError(error)) throw error
+                    return client.request({ method: "tools/list", params }, TolerantListToolsResult, {
+                      timeout: catalogTimeout,
+                    })
+                  }
+                },
+                (result) => result.tools,
+              ),
+            catch: toError,
+          }).pipe(
+            Effect.tapError((error) => Effect.logWarning("failed to list MCP tools", { server, error: error.message })),
+          )
+          return tools.map((tool) => ({
+            name: tool.name,
+            description: tool.description,
+            inputSchema: tool.inputSchema,
+            outputSchema: "outputSchema" in tool ? tool.outputSchema : undefined,
+            meta: tool._meta,
+          }))
+        }),
       prompts: () =>
         request("list MCP prompts", () => client.listPrompts(undefined, catalog)).pipe(Effect.map((r) => r.prompts)),
       resources: () =>

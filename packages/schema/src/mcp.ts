@@ -34,6 +34,9 @@ export class LocalConfig extends Schema.Class<LocalConfig>("Mcp.LocalConfig")({
   codemode: Schema.Boolean.pipe(optional).annotate({
     description: "Expose this server's tools through Code Mode. Defaults to true.",
   }),
+  modelVisible: Schema.Boolean.pipe(optional).annotate({
+    description: "Register this server's tools for model tool calling. Defaults to true; Tool Bridge remains available.",
+  }),
   timeout: TimeoutConfig.pipe(optional),
   protocol: Protocol.pipe(optional),
 }) {}
@@ -65,6 +68,9 @@ export class RemoteConfig extends Schema.Class<RemoteConfig>("Mcp.RemoteConfig")
   disabled: Schema.Boolean.pipe(optional),
   codemode: Schema.Boolean.pipe(optional).annotate({
     description: "Expose this server's tools through Code Mode. Defaults to true.",
+  }),
+  modelVisible: Schema.Boolean.pipe(optional).annotate({
+    description: "Register this server's tools for model tool calling. Defaults to true; Tool Bridge remains available.",
   }),
   timeout: TimeoutConfig.pipe(optional),
   protocol: Protocol.pipe(optional),
@@ -157,9 +163,11 @@ export const ToolInfo = Schema.Struct({
   server: Schema.String,
   name: Schema.String,
   codemode: Schema.Boolean.pipe(optional),
+  modelVisible: Schema.Boolean.pipe(optional),
   description: Schema.String.pipe(optional),
   inputSchema: Schema.Unknown.pipe(optional),
   outputSchema: Schema.Unknown.pipe(optional),
+  meta: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
 }).annotate({ identifier: "Mcp.ToolInfo" })
 export type ToolInfo = typeof ToolInfo.Type
 

@@ -40,8 +40,8 @@ export const layer = Layer.effect(
           discovered = yield* mcp.tools()
           yield* tools.transform((editor) => {
             for (const tool of discovered) {
-              editor.add({
-                name: tool.name,
+              if (tool.modelVisible === false) continue
+              editor.add({                name: tool.name,
                 options: { namespace: namespace(tool.server), codemode: tool.codemode !== false },
                 description: tool.description ?? "",
                 input: (tool.inputSchema ?? { type: "object", properties: {} }) as JsonSchema.JsonSchema,

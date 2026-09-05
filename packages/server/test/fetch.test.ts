@@ -267,6 +267,7 @@ it.live("lists tools for one MCP server without executing them", () =>
             server: Mcp.ServerName.make("demo"),
             name: "search",
             description: "Search data",
+            modelVisible: false,
             inputSchema: { type: "object", properties: { query: { type: "string" } } },
           }),
           new Mcp.Tool({ server: Mcp.ServerName.make("other"), name: "ignored" }),
@@ -277,7 +278,7 @@ it.live("lists tools for one MCP server without executing them", () =>
 
     expect(response.status).toBe(200)
     expect(yield* Effect.promise(() => response.json())).toMatchObject({
-      data: [{ server: "demo", name: "search", description: "Search data" }],
+      data: [{ server: "demo", name: "search", description: "Search data", modelVisible: false }],
     })
     const missing = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/mcp/missing/tools")))
     expect(missing.status).toBe(404)

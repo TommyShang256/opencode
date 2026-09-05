@@ -81,6 +81,7 @@ describe("Config.Entry", () => {
             docs: new Mcp.RemoteConfig({
               type: "remote",
               url: "https://example.com/mcp",
+              modelVisible: false,
               headers: undefined,
               oauth: new Mcp.OAuthConfig({ client_id: undefined }),
             }),
@@ -99,6 +100,7 @@ describe("Config.Entry", () => {
     const docs = encoded.info.mcp?.servers?.docs
     if (docs?.type !== "remote" || docs.oauth === false) throw new Error("Expected a remote MCP server")
     expect(docs).not.toHaveProperty("headers")
+    expect(docs.modelVisible).toBe(false)
     expect(docs.oauth).not.toHaveProperty("client_id")
     expect(encoded.info.providers?.custom).not.toHaveProperty("headers")
     expect(encoded.info.providers?.custom).not.toHaveProperty("canonical")

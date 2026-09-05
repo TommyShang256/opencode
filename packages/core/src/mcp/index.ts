@@ -32,12 +32,59 @@ export interface ServerInstructions {
   readonly instructions: string
 }
 
-/** SDK tool definition tagged with the server that owns it. */
-export type Tool = McpClient.Tool & { readonly server: ServerName; readonly codemode?: boolean }
-export type ToolResultContent = McpClient.CallToolContent
-export type ToolResult = McpClient.CallToolResult & { readonly server: ServerName; readonly tool: string }
-export type Prompt = McpClient.Prompt & { readonly server: ServerName }
-export type PromptResult = McpClient.GetPromptResult & { readonly server: ServerName; readonly name: string }
+export class ServerInstructions extends Schema.Class<ServerInstructions>("MCP.ServerInstructions")({
+  server: ServerName,
+  instructions: Schema.String,
+}) {}
+
+export class Tool extends Schema.Class<Tool>("MCP.Tool")({
+  server: ServerName,
+  name: Schema.String,
+  codemode: Schema.Boolean.pipe(Schema.optional),
+  modelVisible: Schema.Boolean.pipe(Schema.optional),
+  description: Schema.String.pipe(Schema.optional),
+  inputSchema: Schema.Unknown.pipe(Schema.optional),
+  outputSchema: Schema.Unknown.pipe(Schema.optional),
+  meta: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
+}) {}
+
+export const ToolResultContent = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("text"), text: Schema.String }),
+  Schema.Struct({ type: Schema.Literal("media"), data: Schema.String, mimeType: Schema.String }),
+]).pipe(Schema.toTaggedUnion("type"))
+export type ToolResultContent = typeof ToolResultContent.Type
+
+export class ToolResult extends Schema.Class<ToolResult>("MCP.ToolResult")({
+  server: ServerName,
+  tool: Schema.String,
+  isError: Schema.Boolean,
+  structured: Schema.Unknown.pipe(Schema.optional),
+  content: Schema.Array(ToolResultContent),
+}) {}
+
+export class PromptArgument extends Schema.Class<PromptArgument>("MCP.PromptArgument")({
+  name: Schema.String,
+  description: Schema.String.pipe(Schema.optional),
+  required: Schema.Boolean.pipe(Schema.optional),
+}) {}
+
+export class Prompt extends Schema.Class<Prompt>("MCP.Prompt")({
+  server: ServerName,
+  name: Schema.String,
+  description: Schema.String.pipe(Schema.optional),
+  arguments: Schema.Array(PromptArgument).pipe(Schema.optional),
+}) {}
+
+export class PromptMessage extends Schema.Class<PromptMessage>("MCP.PromptMessage")({
+  role: Schema.String,
+  content: Schema.Unknown,
+}) {}
+
+export class PromptResult extends Schema.Class<PromptResult>("MCP.PromptResult")({
+  server: ServerName,
+  name: Schema.String,
+  messages: Schema.Array(PromptMessage),
+}) {}
 
 export const Resource = Mcp.Resource
 export type Resource = Mcp.Resource
@@ -288,11 +335,50 @@ export const layer = (options?: Options) =>
           }),
       } satisfies McpClient.ElicitationHandler
 
-      const toTool = (server: ServerName, entry: ServerEntry, tool: McpClient.Tool): Tool => ({
-        ...tool,
-        server,
-        ...(entry.config.codemode === undefined ? {} : { codemode: entry.config.codemode }),
-      })
+      const toTool = (server: ServerName, entry: ServerEntry, def: McpClient.ToolDefinition) =>
+        new Tool({
+          server,
+          name: def.name,
+          codemode: entry.config.codemode,
+          modelVisible: entry.config.modelVisible,
+          description: def.description,
+          inputSchema: def.inputSchema,
+          outputSchema: def.outputSchema,
+          meta: def.meta,
+        })
+
+      const toPrompt = (server: ServerName, def: McpClient.PromptDefinition) =>
+        new Prompt({
+          server,
+          name: def.name,
+          description: def.description,
+          arguments: def.arguments?.map(
+            (argument) =>
+              new PromptArgument({
+                name: argument.name,
+                description: argument.description,
+                required: argument.required,
+              }),
+          ),
+        })
+
+      const toResource = (server: ServerName, def: McpClient.ResourceDefinition) =>
+        Resource.make({
+          server,
+          name: def.name,
+          uri: def.uri,
+          description: def.description,
+          mimeType: def.mimeType,
+        })
+
+      const toResourceTemplate = (server: ServerName, def: McpClient.ResourceTemplateDefinition) =>
+        ResourceTemplate.make({
+          server,
+          name: def.name,
+          uriTemplate: def.uriTemplate,
+          description: def.description,
+          mimeType: def.mimeType,
+        })
 
       const refreshTools = (name: ServerName, entry: ServerEntry, connection: McpClient.Connection) =>
         connection.tools().pipe(

@@ -2141,17 +2141,19 @@ test("serializes concurrent MCP lifecycle operations", async () => {
   )
 })
 
-testEffect(Layer.empty).live("isolates invalid MCP tools and preserves plugin transforms through catalog updates", () =>
+testEffect(Layer.empty).live("keeps bridge-only MCP tools out of the model registry and preserves plugin transforms", () =>
   Effect.gen(function* () {
-    const tool = (server: string, name: string, description = name) =>
-      ({
+    const tool = (server: string, name: string, description = name, modelVisible = true) =>
+      new Mcp.Tool({
         server: Mcp.ServerName.make(server),
         name,
         description,
         codemode: false,
+        modelVisible,
         inputSchema: { type: "object", properties: {} },
-      }) satisfies Mcp.Tool
-    const healthy = [tool("demo", "search"), tool("other", "lookup")]
+      })
+    const bridgeOnly = tool("script", "upload", "Bridge-only upload", false)
+    const healthy = [tool("demo", "search"), tool("other", "lookup"), bridgeOnly]
     const namespace = tool("x".repeat(65), "lookup")
     const catalog = yield* Ref.make([tool("demo", "x".repeat(129)), ...healthy, namespace])
 
