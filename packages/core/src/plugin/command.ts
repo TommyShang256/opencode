@@ -55,6 +55,7 @@ export const Plugin = define({
       for (const prompt of loaded.prompts) {
         editor.add({
           name: mcpCommandName(prompt.server, prompt.name),
+          source: "mcp",
           description: prompt.description,
           execute: (input) =>
             Effect.gen(function* () {

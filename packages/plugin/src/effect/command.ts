@@ -2,6 +2,7 @@ import type { CommandApi } from "@opencode/client/effect/api"
 import type { PromptInput } from "@opencode/schema/prompt-input"
 import type { Session } from "@opencode/schema/session"
 import type { SessionInbox } from "@opencode/schema/session-inbox"
+import type { Command } from "@opencode/schema/command"
 import type { Effect } from "effect"
 import type { Transform } from "./registration.js"
 
@@ -13,6 +14,7 @@ export interface CommandInvocation {
 
 export interface CommandDefinition {
   readonly name: string
+  readonly source?: Command.Info["source"]
   readonly description?: string
   readonly execute: (input: CommandInvocation) => Effect.Effect<void, unknown>
 }

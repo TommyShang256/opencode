@@ -1104,6 +1104,8 @@ export type SessionLogOutput =
             readonly sessionID: Session.ID
             readonly assistantMessageID: SessionMessage.ID
             readonly id: string
+            readonly name: string
+            readonly input: { readonly [x: string]: unknown }
           }
         }
       | {

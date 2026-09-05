@@ -61,8 +61,40 @@ const layer = Layer.effect(
           release: holdUnsafe(),
         })
       })
-      const exit = yield* Effect.suspend(() =>
-        plugin.effect({ ...host, storage: PluginHost.storage(kv, plugin.id) }),
+      const source = !plugin.source || plugin.source.type === "builtin" ? "builtin" : "extension"
+      const loaded = yield* Effect.suspend(() =>
+        plugin.effect({
+          ...host,
+          storage: PluginHost.storage(kv, plugin.id),
+          agent: {
+            ...host.agent,
+            transform: (callback) =>
+              host.agent.transform((draft) =>
+                callback({
+                  ...draft,
+                  update: (id, update) =>
+                    draft.update(id, (agent) => {
+                      update(agent)
+                      if (source === "extension" || agent.source === undefined) agent.source = source
+                    }),
+                }),
+              ),
+          },
+          command: {
+            ...host.command,
+            transform: (callback) =>
+              host.command.transform((draft) =>
+                callback({
+                  add: (definition) =>
+                    draft.add({
+                      ...definition,
+                      source: source === "extension" ? source : definition.source ?? source,
+                    }),
+                }),
+              ),
+          },
+        }),
+      )
       ).pipe(
         grouped,
         inherit,

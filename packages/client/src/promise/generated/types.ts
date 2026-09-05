@@ -325,6 +325,7 @@ export type FileSystemEntry = { path: string; type: "file" | "directory" }
 export type FileSystemWrite = { path: string }
 
 export type CommandInfo = { name: string; description?: string }
+export type CommandInfo = { name: string; source?: "builtin" | "extension" | "mcp"; description?: string }
 
 export type SkillInfo = {
   id: string
@@ -776,6 +777,16 @@ export type SessionToolInputEnded = {
   durable: { aggregateID: string; seq: number; version: 1 }
   location?: LocationRef
   data: { sessionID: string; assistantMessageID: string; id: string; text: string }
+}
+
+export type SessionToolWaitingClient = {
+  id: string
+  created: number
+  metadata?: { [x: string]: any }
+  type: "session.tool.waiting-client"
+  durable: { aggregateID: string; seq: number; version: 1 }
+  location?: LocationRef
+  data: { sessionID: string; assistantMessageID: string; id: string; name: string; input: { [x: string]: any } }
 }
 
 export type SessionRetryScheduled = {
@@ -1957,6 +1968,7 @@ export type ModelInfo = {
 export type AgentInfo = {
   id: string
   name: string
+  source?: "builtin" | "extension"
   model?: ModelRef
   request: ProviderRequest
   system?: string

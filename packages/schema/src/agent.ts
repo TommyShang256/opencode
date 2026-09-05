@@ -23,6 +23,7 @@ export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
   name: Name,
+  source: Schema.Literals(["builtin", "extension"]).pipe(optional),
   model: Model.Ref.pipe(optional),
   request: Provider.Request,
   system: Schema.String.pipe(optional),

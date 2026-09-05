@@ -75,6 +75,7 @@ export const Plugin = define({
           const subagent = command.subagent ?? command.subtask
           editor.add({
             name,
+            source: "extension",
             description: command.description,
             execute: (input) =>
               Effect.gen(function* () {
