@@ -57,6 +57,7 @@ export interface ToolDefinition {
   readonly description: string | undefined
   readonly inputSchema: unknown
   readonly outputSchema: unknown
+  readonly meta: Record<string, unknown> | undefined
 }
 
 export interface PromptDefinition {
@@ -288,6 +289,7 @@ export const connect = Effect.fnUntraced(function* (
             description: tool.description,
             inputSchema: tool.inputSchema,
             outputSchema: "outputSchema" in tool ? tool.outputSchema : undefined,
+            meta: tool._meta,
           }))
         }),
       prompts: () =>

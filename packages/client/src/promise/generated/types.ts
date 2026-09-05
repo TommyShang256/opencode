@@ -319,9 +319,11 @@ export type McpToolInfo = {
   server: string
   name: string
   codemode?: boolean
+  modelVisible?: boolean
   description?: string
   inputSchema: JsonValue
   outputSchema: JsonValue
+  meta?: { [x: string]: JsonValue }
 }
 
 export type McpToolCallContent = { type: "text"; text: string } | { type: "media"; data: string; mimeType: string }
@@ -2006,6 +2008,7 @@ export type ConfigEntry =
                   environment?: { [x: string]: string }
                   disabled?: boolean
                   codemode?: boolean
+                  modelVisible?: boolean
                   timeout?: { startup?: number; catalog?: number; execution?: number }
                 }
               | {
@@ -2023,6 +2026,7 @@ export type ConfigEntry =
                     | false
                   disabled?: boolean
                   codemode?: boolean
+                  modelVisible?: boolean
                   timeout?: { startup?: number; catalog?: number; execution?: number }
                   clientInfo?: McpClientInfo
                 }
@@ -4712,6 +4716,7 @@ export type McpAddInput = {
           readonly environment?: { readonly [x: string]: string }
           readonly disabled?: boolean
           readonly codemode?: boolean
+          readonly modelVisible?: boolean
           readonly timeout?: { readonly startup?: number; readonly catalog?: number; readonly execution?: number }
         }
       | {
@@ -4729,6 +4734,7 @@ export type McpAddInput = {
             | false
           readonly disabled?: boolean
           readonly codemode?: boolean
+          readonly modelVisible?: boolean
           readonly timeout?: { readonly startup?: number; readonly catalog?: number; readonly execution?: number }
           readonly clientInfo?: { readonly name: string; readonly version: string; readonly title?: string }
         }

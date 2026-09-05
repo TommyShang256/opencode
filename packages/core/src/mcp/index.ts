@@ -42,9 +42,11 @@ export class Tool extends Schema.Class<Tool>("MCP.Tool")({
   server: ServerName,
   name: Schema.String,
   codemode: Schema.Boolean.pipe(Schema.optional),
+  modelVisible: Schema.Boolean.pipe(Schema.optional),
   description: Schema.String.pipe(Schema.optional),
   inputSchema: Schema.Unknown.pipe(Schema.optional),
   outputSchema: Schema.Unknown.pipe(Schema.optional),
+  meta: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
 }) {}
 
 export const ToolResultContent = Schema.Union([
@@ -402,9 +404,11 @@ export const layer = (options?: Options) =>
           server,
           name: def.name,
           codemode: entry.config.codemode,
+          modelVisible: entry.config.modelVisible,
           description: def.description,
           inputSchema: def.inputSchema,
           outputSchema: def.outputSchema,
+          meta: def.meta,
         })
 
       const toPrompt = (server: ServerName, def: McpClient.PromptDefinition) =>

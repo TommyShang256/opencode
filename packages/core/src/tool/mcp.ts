@@ -40,6 +40,7 @@ export const layer = Layer.effect(
           discovered = yield* mcp.tools()
           yield* tools.transform((draft) => {
             for (const tool of discovered) {
+              if (tool.modelVisible === false) continue
               const schema = (tool.inputSchema ?? {}) as JsonSchema.JsonSchema
               draft.add({
                 name: tool.name,
