@@ -15,6 +15,8 @@ import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { response } from "../location"
 
+const allowedCallersMetaKey = "com.huawei.ryoma.dataagent/allowed-callers"
+
 const notFound = <A, R>(effect: Effect.Effect<A, Mcp.NotFoundError, R>) =>
   effect.pipe(Effect.mapError((error) => new McpServerNotFoundError({ server: error.server, message: error.message })))
 
@@ -93,13 +95,29 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           const session = yield* Session.Service
           const location = yield* Location.Service
           const agents = yield* Agent.Service
+          const tool = (yield* service.tools()).find(
+            (candidate) => candidate.server === ctx.params.server && candidate.name === ctx.params.tool,
+          )
+          const declaredCallers = toolCallers(tool)
+
+          // DataAgent publishes the caller contract with each tool. A bridge
+          // request represents SCRIPT, so an explicit contract is authoritative
+          // and must not inherit a model Agent's tool allowlist.
+          if (declaredCallers && !declaredCallers.includes("script")) {
+            return yield* new PermissionDeniedError({
+              message: `MCP tool is not available to script callers: ${ctx.params.server}/${ctx.params.tool}`,
+              permission: McpTool.name(ctx.params.server, ctx.params.tool),
+            })
+          }
 
           // Agent state loads asynchronously at startup; permission rules resolve
           // via agents, and an unloaded registry fails CLOSED (deny-all). Wait
           // briefly for it so early bridge calls aren't spuriously denied.
-          for (let i = 0; i < 25; i++) {
-            if ((yield* agents.list()).length > 0) break
-            yield* Effect.sleep("200 millis")
+          if (!declaredCallers) {
+            for (let i = 0; i < 25; i++) {
+              if ((yield* agents.list()).length > 0) break
+              yield* Effect.sleep("200 millis")
+            }
           }
 
           const locationRef = Location.Ref.make({
@@ -127,29 +145,31 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           // Keep this request alive while the standard permission endpoint resolves it,
           // so both "once" and "always" have the same meaning as an LLM-owned tool call.
           const action = McpTool.name(ctx.params.server, ctx.params.tool)
-          yield* permission
-            .assert({
-              action,
-              resources: ["*"],
-              save: ["*"],
-              metadata: { bridge: "mcp.tool.call" },
-              sessionID,
-              agent: ctx.payload.agent,
-            })
-            .pipe(
-              Effect.mapError((error) =>
-                error._tag === "Session.NotFoundError"
-                  ? new SessionNotFoundError({ sessionID: error.sessionID, message: error.message })
-                  : new PermissionDeniedError({ message: error.message, permission: action }),
-              ),
-              Effect.catchCause((cause) =>
-                Cause.squash(cause) instanceof Permission.DeclinedError
-                  ? Effect.fail(
-                      new PermissionDeniedError({ message: `MCP tool call denied: ${action}`, permission: action }),
-                    )
-                  : Effect.failCause(cause),
-              ),
-            )
+          if (!declaredCallers) {
+            yield* permission
+              .assert({
+                action,
+                resources: ["*"],
+                save: ["*"],
+                metadata: { bridge: "mcp.tool.call" },
+                sessionID,
+                agent: ctx.payload.agent,
+              })
+              .pipe(
+                Effect.mapError((error) =>
+                  error._tag === "Session.NotFoundError"
+                    ? new SessionNotFoundError({ sessionID: error.sessionID, message: error.message })
+                    : new PermissionDeniedError({ message: error.message, permission: action }),
+                ),
+                Effect.catchCause((cause) =>
+                  Cause.squash(cause) instanceof Permission.DeclinedError
+                    ? Effect.fail(
+                        new PermissionDeniedError({ message: `MCP tool call denied: ${action}`, permission: action }),
+                      )
+                    : Effect.failCause(cause),
+                ),
+              )
+          }
 
           const result = yield* service
             .callTool({
@@ -183,4 +203,9 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
 
 function bridgeSessionKey(location: Location.Ref) {
   return `${location.workspaceID ?? "local"}\u0000${location.directory}`
+}
+
+function toolCallers(tool: Mcp.Tool | undefined) {
+  const value = tool?.meta?.[allowedCallersMetaKey]
+  return Array.isArray(value) && value.every((caller): caller is string => typeof caller === "string") ? value : undefined
 }
