@@ -244,9 +244,55 @@ it.live("lists tools for one MCP server without executing them", () =>
   }).pipe(Effect.scoped),
 )
 
+it.live("enforces the declared script caller contract at the MCP bridge", () =>
+  Effect.gen(function* () {
+    const called: string[] = []
+    const meta = (callers: string[]) => ({ "com.huawei.ryoma.dataagent/allowed-callers": callers })
+    const mcp = Layer.mock(Mcp.Service, {
+      tools: () =>
+        Effect.succeed([
+          new Mcp.Tool({ server: Mcp.ServerName.make("skill"), name: "download", meta: meta(["script"]) }),
+          new Mcp.Tool({ server: Mcp.ServerName.make("agent"), name: "create", meta: meta(["agent"]) }),
+        ]),
+      callTool: (input) => {
+        called.push(`${input.server}/${input.name}`)
+        return Effect.succeed({
+          server: input.server,
+          tool: input.name,
+          isError: false,
+          content: [{ type: "text" as const, text: "called" }],
+        })
+      },
+    })
+    const handler = yield* ServerFetch.make(
+      {
+        ...options,
+        config: {
+          project: false,
+          content: JSON.stringify({ permissions: [{ action: "*", resource: "*", effect: "deny" }] }),
+        },
+      },
+      { overrides: [Mcp.node.replace(mcp)] },
+    )
+    const request = (server: string, tool: string) =>
+      handler(
+        new Request(`http://opencode.local/api/mcp/${server}/tool/${tool}/call`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ arguments: {} }),
+        }),
+      )
+
+    expect((yield* Effect.promise(() => request("skill", "download"))).status).toBe(200)
+    expect((yield* Effect.promise(() => request("agent", "create"))).status).toBe(403)
+    expect(called).toEqual(["skill/download"])
+  }).pipe(Effect.scoped),
+)
+
 it.live("resumes an MCP bridge call after a one-time approval", () =>
   Effect.gen(function* () {
     const mcp = Layer.mock(Mcp.Service, {
+      tools: () => Effect.succeed([]),
       callTool: (input) =>
         Effect.succeed({
           server: input.server,
