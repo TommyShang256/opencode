@@ -95,6 +95,7 @@ export const Plugin = define({
 
           const exists = draft.get(agentID) !== undefined
           draft.update(agentID, (agent) => {
+            agent.source = "extension"
             if (!exists) agent.permissions.push(...permissions)
             if (item.model !== undefined)
               agent.model = {

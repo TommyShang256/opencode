@@ -59,8 +59,32 @@ const layer = Layer.effect(
     const load = Effect.fnUntraced(function* (plugin: Versioned) {
       const child = yield* Scope.fork(scope)
       const inherit = yield* State.inherit()
+      const source = !plugin.source || plugin.source.type === "builtin" ? "builtin" : "extension"
       const loaded = yield* Effect.suspend(() =>
-        plugin.effect({ ...host, storage: PluginHost.storage(kv, plugin.id) }),
+        plugin.effect({
+          ...host,
+          storage: PluginHost.storage(kv, plugin.id),
+          agent: {
+            ...host.agent,
+            transform: (callback) => host.agent.transform((draft) => callback({
+              ...draft,
+              update: (id, update) => draft.update(id, (agent) => {
+                update(agent)
+                // Explicit configuration overrides are marked by the config loader.
+                if (source === "extension" || agent.source === undefined) agent.source = source
+              }),
+            })),
+          },
+          command: {
+            ...host.command,
+            transform: (callback) => host.command.transform((draft) => callback({
+              add: (definition) => draft.add({
+                ...definition,
+                source: source === "extension" ? source : definition.source ?? source,
+              }),
+            })),
+          },
+        }),
       ).pipe(
         inherit,
         Effect.updateContext((context: Context.Context<never>) =>

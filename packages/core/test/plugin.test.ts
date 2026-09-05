@@ -4,6 +4,7 @@ import { Context, Effect, Exit, Fiber, Schema, Stream } from "effect"
 import { Plugin as EffectPlugin } from "@opencode-ai/plugin/effect"
 import { Config as ConfigSchema } from "@opencode-ai/schema/config"
 import { Agent } from "@opencode-ai/core/agent"
+import { Command } from "@opencode-ai/core/command"
 import { Bus } from "@opencode-ai/core/bus"
 import { Plugin } from "@opencode-ai/core/plugin"
 import { PluginHost } from "@opencode-ai/core/plugin/host"
@@ -27,6 +28,29 @@ class Secret extends Context.Service<Secret, string>()("@opencode/test/PluginSec
 const versioned = <R>(plugin: EffectPlugin.Plugin<R>, version = "1") => ({ ...plugin, version })
 
 describe("Plugin", () => {
+  it.effect("tracks builtin and extension provenance through registration and replacement", () =>
+    Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const agents = yield* Agent.Service
+      const commands = yield* Command.Service
+      const register = (ctx: EffectPlugin.Context) => Effect.gen(function* () {
+        yield* ctx.agent.transform((draft) => draft.update("same-name", () => {}))
+        yield* ctx.command.transform((draft) => draft.add({ name: "same-name", execute: () => Effect.void }))
+      })
+      const builtin = { id: "core-tools", version: "1", effect: register }
+      yield* plugins.activate([builtin])
+      expect((yield* agents.get(Agent.ID.make("same-name")))?.source).toBe("builtin")
+      expect((yield* commands.get("same-name"))?.source).toBe("builtin")
+      yield* plugins.activate([builtin, {
+        id: "user-tools", version: "1", source: { type: "local", path: "/extensions/tools.ts" }, effect: register,
+      }])
+      expect((yield* agents.get(Agent.ID.make("same-name")))?.source).toBe("extension")
+      expect((yield* commands.get("same-name"))?.source).toBe("extension")
+      yield* plugins.activate([builtin])
+      expect((yield* agents.get(Agent.ID.make("same-name")))?.source).toBe("builtin")
+      expect((yield* commands.get("same-name"))?.source).toBe("builtin")
+    }),
+  )
   it.effect("routes experimental terminal reads through the runtime cell without wrapping results", () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service

@@ -9,6 +9,7 @@ const Updated = ephemeral({ type: "command.updated", schema: {} })
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   name: Schema.String,
+  source: Schema.Literals(["builtin", "extension", "mcp"]).pipe(optional),
   description: Schema.String.pipe(optional),
 }).annotate({ identifier: "Command.Info" })
 

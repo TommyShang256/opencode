@@ -62,6 +62,7 @@ export const Plugin = define({
         for (const [name, command] of Object.entries(document.commands ?? {})) {
           draft.add({
             name,
+            source: "extension",
             description: command.description,
             execute: (input) =>
               Effect.gen(function* () {

@@ -117,9 +117,10 @@ Review files`,
             Command.Info.make({
               name: "review",
               description: "File review",
+              source: "extension",
             }),
-            Command.Info.make({ name: "empty" }),
-            Command.Info.make({ name: "nested/docs" }),
+            Command.Info.make({ name: "empty", source: "extension" }),
+            Command.Info.make({ name: "nested/docs", source: "extension" }),
           ])
           yield* command.execute({
             name: "nested/docs",
