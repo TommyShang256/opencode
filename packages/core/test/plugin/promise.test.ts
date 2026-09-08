@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Message, SystemPart } from "@opencode-ai/ai"
-import { DateTime, Effect, Schema } from "effect"
+import { DateTime, Effect, Schema, Exit, Cause } from "effect"
 import { Agent } from "@opencode-ai/core/agent"
 import { Catalog } from "@opencode-ai/core/catalog"
 import { Model } from "@opencode-ai/core/model"
@@ -32,6 +32,60 @@ import { host } from "./host"
 const it = testEffect(PluginTestLayer)
 
 describe("fromPromise", () => {
+  it.effect("preserves explicit Promise tool rejection as a typed failure before execution", () =>
+    Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const registry = yield* Tool.Service
+      const host = yield* PluginHost.make(plugins)
+      const calls: string[] = []
+      yield* host.tool.transform((draft) => draft.add({
+        name: "admission_probe", options: { codemode: false }, description: "Admission probe",
+        input: Schema.Struct({}), output: Schema.String,
+        execute: () => Effect.sync(() => { calls.push("executed"); return { output: "ok" } }),
+      }))
+      yield* PluginPromise.fromPromise(define({ id: "promise-tool-rejection", setup: async (ctx) => {
+        await ctx.tool.hook("execute.before", (event) => {
+          if (event.id === "call_reject") ctx.tool.reject("TOOL_NOT_AVAILABLE")
+          if (event.id === "call_reject_async") return Promise.resolve().then(() => ctx.tool.reject("TOOL_NOT_AVAILABLE"))
+          if (event.id === "call_bug") throw new Error("unexpected plugin bug")
+        })
+        await ctx.tool.hook("execute.after", (event) => {
+          if (event.id === "call_after_reject") ctx.tool.reject("after execution cannot be a preflight rejection")
+        })
+      } })).effect(host)
+      const snapshot = yield* registry.snapshot()
+      const call = (id: string) => snapshot.execute({
+        sessionID: Session.ID.make("ses_admission"), agent: Agent.ID.make("build"),
+        messageID: SessionMessage.ID.make("msg_admission"),
+        call: { type: "tool-call", id, name: "admission_probe", input: {} },
+      })
+      const rejected = yield* Effect.exit(call("call_reject"))
+      expect(Exit.isFailure(rejected)).toBe(true)
+      if (Exit.isFailure(rejected)) {
+        expect(Cause.hasDies(rejected.cause)).toBe(false)
+        expect(Cause.hasFails(rejected.cause)).toBe(true)
+        expect(Cause.prettyErrors(rejected.cause)).toContainEqual(expect.objectContaining({ message: "TOOL_NOT_AVAILABLE" }))
+      }
+      expect(calls).toEqual([])
+      const rejectedAsync = yield* Effect.exit(call("call_reject_async"))
+      expect(Exit.isFailure(rejectedAsync)).toBe(true)
+      if (Exit.isFailure(rejectedAsync)) {
+        expect(Cause.hasDies(rejectedAsync.cause)).toBe(false)
+        expect(Cause.hasFails(rejectedAsync.cause)).toBe(true)
+      }
+      expect(calls).toEqual([])
+      const bug = yield* Effect.exit(call("call_bug"))
+      expect(Exit.isFailure(bug)).toBe(true)
+      if (Exit.isFailure(bug)) expect(Cause.hasDies(bug.cause)).toBe(true)
+      expect(calls).toEqual([])
+      expect((yield* call("call_allowed")).output).toBe("ok")
+      expect(calls).toEqual(["executed"])
+      const after = yield* Effect.exit(call("call_after_reject"))
+      expect(Exit.isFailure(after)).toBe(true)
+      if (Exit.isFailure(after)) expect(Cause.hasDies(after.cause)).toBe(true)
+      expect(calls).toEqual(["executed", "executed"])
+    }),
+  )
   it.effect("validates and forwards experimental terminal reads through the protocol schema", () =>
     Effect.gen(function* () {
       const seen: unknown[] = []
@@ -813,7 +867,7 @@ describe("fromPromise", () => {
         define({
           id: "promise-tool-lifecycle",
           setup: async (ctx) => {
-            expect(Object.keys(ctx.tool).sort()).toEqual(["hook", "reload", "transform"])
+            expect(Object.keys(ctx.tool).sort()).toEqual(["hook", "reject", "reload", "transform"])
             const registration = await ctx.tool.transform((draft) => {
               source.replays++
               const description = source.description

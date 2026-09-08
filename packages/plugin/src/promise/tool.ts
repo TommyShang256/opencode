@@ -63,6 +63,8 @@ interface ToolHooks {
 }
 
 export interface ToolDomain {
+  /** Reject an execute.before call as an expected Tool.Error, before any tool side effect. */
+  readonly reject: (message: string) => never
   readonly transform: Transform<ToolDraft>
   readonly reload: () => Promise<void>
   readonly hook: Hooks<ToolHooks>

@@ -7,6 +7,7 @@ import { HttpApiEndpoint, HttpApiSchema } from "effect/unstable/httpapi"
 import { define } from "../effect/plugin.js"
 import type { Plugin } from "./plugin.js"
 import type { Info } from "./tool.js"
+import type { ToolFailures } from "../effect/tool.js"
 import type { RpcDomain, RpcHandlers } from "./rpc.js"
 
 type HostRegistration = { readonly dispose: Effect.Effect<void> }
@@ -455,6 +456,7 @@ export function fromPromise(plugin: Plugin) {
             scan: (options) => run(host.storage.scan(options)),
           },
           tool: {
+            reject: (message) => { throw new Tool.Error({ message }) },
             reload: () => run(host.tool.reload()),
             transform: (callback) =>
               register(
@@ -490,7 +492,11 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             hook: (name, callback) =>
-              register(host.tool.hook(name, (event) => Effect.promise(() => Promise.resolve(callback(event))))),
+              register(host.tool.hook(name, (event) => (name === "execute.before"
+                ? Effect.tryPromise({ try: () => Promise.resolve(callback(event)), catch: (cause) => cause }).pipe(
+                    Effect.catch((cause) => cause instanceof Tool.Error ? Effect.fail(cause) : Effect.die(cause)),
+                  )
+                : Effect.promise(() => Promise.resolve(callback(event)))) as Effect.Effect<void, ToolFailures[typeof name]>)),
           },
           vcs: {
             get: adaptApiMethod(VcsEndpoints["vcs.get"], host.vcs.get),
