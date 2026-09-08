@@ -90,6 +90,7 @@ function resourceServer(
           name: string
           arguments: Record<string, unknown> | undefined
           sessionID: unknown
+          execution: unknown
           progressToken: unknown
         }>,
         initializations: 0,
@@ -147,6 +148,7 @@ function resourceServer(
             name: request.params.name,
             arguments: request.params.arguments,
             sessionID: request.params._meta?.sessionID,
+            execution: request.params._meta?.execution,
             progressToken: request.params._meta?.progressToken,
           })
           return Promise.resolve({ content: [] })
@@ -415,6 +417,7 @@ test("passes session IDs as MCP request metadata", async () => {
           name: "echo",
           args: { text: "hello" },
           sessionID: Session.ID.make("ses_mcp_metadata"),
+          invocation: { ...toolIdentity, id: Tool.CallID.make("call_metadata") },
         })
         yield* connection.callTool({ name: "echo" })
 
@@ -423,12 +426,14 @@ test("passes session IDs as MCP request metadata", async () => {
             name: "echo",
             arguments: { text: "hello" },
             sessionID: "ses_mcp_metadata",
+            execution: { ...toolIdentity, id: "call_metadata" },
             progressToken: expect.any(Number),
           },
           {
             name: "echo",
             arguments: {},
             sessionID: undefined,
+            execution: undefined,
             progressToken: expect.any(Number),
           },
         ])
@@ -1837,6 +1842,7 @@ it.effect("forwards the invoking session through direct and Code Mode MCP tools"
       name: "lookup",
       args: {},
       sessionID: directSessionID,
+      invocation: { ...toolIdentity, id: "call_mcp_direct" },
     })
 
     const codeModeSessionID = Session.ID.make("ses_mcp_codemode")
@@ -1855,6 +1861,7 @@ it.effect("forwards the invoking session through direct and Code Mode MCP tools"
       name: "search",
       args: {},
       sessionID: codeModeSessionID,
+      invocation: { ...toolIdentity, id: "call_mcp_codemode" },
     })
   }),
 )

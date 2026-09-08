@@ -27,9 +27,12 @@ import {
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ConfigMCP } from "@opencode-ai/schema/config/mcp"
 import type { Session } from "@opencode-ai/schema/session"
+import type { Tool } from "@opencode-ai/schema/tool"
 import { McpStdio } from "./stdio.js"
 
 const DEFAULT_STARTUP_TIMEOUT = 30_000
+/** Runtime provenance only; receivers still authorize the active invocation. */
+export type Invocation = Pick<Tool.Context, "agent" | "messageID" | "id">
 const DEFAULT_CATALOG_TIMEOUT = 30_000
 const DEFAULT_EXECUTION_TIMEOUT = 12 * 60 * 60 * 1_000 // 12 hours
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
@@ -159,6 +162,7 @@ export interface Connection {
     readonly name: string
     readonly args?: Record<string, unknown>
     readonly sessionID?: Session.ID
+    readonly invocation?: Invocation
   }) => Effect.Effect<CallToolResult, Error>
   readonly onClose: (callback: () => void) => void
   /** Registers a callback fired when the server emits an MCP logging notification. */
@@ -403,7 +407,10 @@ export const connect = Effect.fnUntraced(function* (
               {
                 name: input.name,
                 arguments: input.args ?? {},
-                ...(input.sessionID === undefined ? {} : { _meta: { sessionID: input.sessionID } }),
+                ...(input.sessionID === undefined ? {} : { _meta: {
+                  sessionID: input.sessionID,
+                  ...(input.invocation === undefined ? {} : { execution: input.invocation }),
+                } }),
               },
               CallToolResultSchema,
               // Keep progress tokens available while enforcing a hard wall-clock execution timeout.
