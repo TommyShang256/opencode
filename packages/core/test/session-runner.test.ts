@@ -2887,10 +2887,10 @@ describe("SessionRunnerLLM", () => {
     ])
   })
 
-  scenario("client tool admission rejects one call without suspending or losing the next allowed call", function* (s) {
+  for (const phase of ["execute.before", "execute.validate"] as const) scenario(`client tool admission ${phase} rejects one call without losing the next allowed call`, function* (s) {
     const hooks = yield* PluginHooks.Service
     const seen: string[] = []
-    yield* hooks.register("tool", "execute.before", (event) => {
+    yield* hooks.register("tool", phase, (event) => {
       seen.push(event.id)
       expect(event.sessionID).toBe(sessionID)
       return event.id === "client-denied"

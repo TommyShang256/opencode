@@ -35,6 +35,15 @@ interface ToolDraft {
 }
 
 interface ToolHooks {
+  /** Final resolved identity and repaired input. Mutations to this snapshot are ignored. */
+  readonly "execute.validate": {
+    readonly tool: string
+    readonly sessionID: Session.ID
+    readonly agent: Agent.ID
+    readonly messageID: SessionMessage.ID
+    readonly id: Tool.CallID
+    readonly input: unknown
+  }
   readonly "execute.before": {
     tool: string
     readonly sessionID: Session.ID
@@ -63,7 +72,7 @@ interface ToolHooks {
 }
 
 export interface ToolDomain {
-  /** Reject an execute.before call as an expected Tool.Error, before any tool side effect. */
+  /** Reject execute.before/execute.validate as an expected Tool.Error, before tool side effects. */
   readonly reject: (message: string) => never
   readonly transform: Transform<ToolDraft>
   readonly reload: () => Promise<void>
