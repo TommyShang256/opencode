@@ -14,6 +14,7 @@ import { Cause, Clock, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { SessionError } from "@opencode/schema/session-error"
 import { Bus } from "../../bus.js"
 import { Permission } from "../../permission.js"
+import { PluginHooks } from "../../plugin/hooks.js"
 import { Snapshot } from "../../snapshot.js"
 import { Tool } from "../../tool.js"
 import { ToolOutput } from "../../tool-output.js"
@@ -72,6 +73,7 @@ export const make = Effect.gen(function* () {
   const llm = yield* LLMClient.Service
   const snapshots = yield* Snapshot.Service
   const toolOutput = yield* ToolOutput.Service
+  const hooks = yield* PluginHooks.Service
 
   const attempt = Effect.fn("SessionStep.attempt")(function* (input: Input) {
     const startSnapshot = yield* snapshots.capture()
@@ -121,8 +123,29 @@ export const make = Effect.gen(function* () {
           yield* publisher.publish(event)
           if (event.type !== "tool-call" || event.providerExecuted) return
           if (input.prepared.toolTarget(event.name) === "client") {
-            clientToolCalls.push(event)
-            yield* publisher.waitForClient(event.id)
+            const admitted = yield* Effect.gen(function* () {
+              if (input.prepared.request.toolChoice?.type === "none")
+                return yield* new Tool.Error({ message: "Tools are disabled after the maximum agent steps" })
+              const checked = yield* hooks.trigger("tool", "execute.before", {
+                tool: event.name,
+                sessionID: input.sessionID,
+                agent: input.agent,
+                messageID: input.assistantMessageID,
+                id: Tool.CallID.make(event.id),
+                input: event.input,
+              })
+              // A remote execution cannot be redirected after choosing its client owner.
+              if (checked.tool !== event.name)
+                return yield* new Tool.Error({ message: "Client tool admission cannot change execution target" })
+              return { input: checked.input }
+            }).pipe(
+              Effect.catchTag("Tool.Error", (error) =>
+                publisher.failTool(event.id, toSessionError(error), error.metadata).pipe(Effect.as(undefined)),
+              ),
+            )
+            if (!admitted) return
+            clientToolCalls.push({ ...event, input: admitted.input })
+            yield* publisher.waitForClient(event.id, admitted)
             return
           }
           toolRuns.push({

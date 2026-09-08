@@ -345,7 +345,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
             match.state = castDraft(
               SessionMessage.ToolStateWaitingClient.make({
                 status: "waiting-client",
-                input: match.state.input,
+                input: event.data.input,
               }),
             )
           }

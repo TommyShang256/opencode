@@ -560,9 +560,10 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
 
   const publishTraced = Effect.fn("SessionRunner.publishLLMEvent")(publish)
 
-  const waitForClient = Effect.fnUntraced(function* (id: string) {
+  const waitForClient = Effect.fnUntraced(function* (id: string, admitted?: { readonly input: unknown }) {
     const tool = tools.get(id)
     if (!tool?.called || tool.settled) return yield* Effect.die(new Error(`Client wait outside running call: ${id}`))
+    if (admitted) tool.input = admitted.input
     yield* bus.publish(SessionEvent.Tool.WaitingClient, {
       sessionID: input.sessionID,
       assistantMessageID,

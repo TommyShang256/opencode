@@ -3758,6 +3758,64 @@ describe("SessionRunnerLLM", () => {
     ])
   })
 
+  scenario("client tool admission rejects one call without suspending or losing the next allowed call", function* (s) {
+    const hooks = yield* PluginHooks.Service
+    const seen: string[] = []
+    yield* hooks.register("tool", "execute.before", (event) => {
+      seen.push(event.id)
+      expect(event.sessionID).toBe(sessionID)
+      return event.id === "client-denied"
+        ? Effect.fail(new Tool.Error({ message: "Client tool denied" }))
+        : Effect.void
+    })
+    yield* s.session.prompt({ sessionID, text: "Use the browser", resume: false,
+      clientTools: [{ name: "present_artifact", description: "Present", inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false } }] })
+    yield* s.llm.push(TestLLM.tool("client-denied", "present_artifact", {}), TestLLM.tool("client-allowed", "present_artifact", {}))
+    yield* s.resume
+    expect(seen).toEqual(["client-denied", "client-allowed"])
+    expect(s.requests).toHaveLength(2)
+    expect(s.executions).toEqual([])
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({ type: "user" }),
+      Expected.assistant({}, [Expected.failedTool({ id: "client-denied" }, { error: { message: "Client tool denied" } })]),
+      Expected.assistant({}, [{ type: "tool", id: "client-allowed", state: { status: "waiting-client" } }]),
+    ])
+    yield* s.resume
+    expect(seen).toHaveLength(2)
+  })
+
+  scenario("client tool admission persists repaired input before the waiting boundary", function* (s) {
+    const hooks = yield* PluginHooks.Service
+    yield* hooks.register("tool", "execute.before", (event) => Effect.sync(() => {
+      if (event.tool === "present_artifact") event.input = { artifactId: "repaired" }
+    }))
+    yield* s.session.prompt({ sessionID, text: "Present", resume: false,
+      clientTools: [{ name: "present_artifact", description: "Present", inputSchema: { type: "object", properties: { artifactId: { type: "string" } }, required: ["artifactId"], additionalProperties: false } }] })
+    yield* s.llm.push(TestLLM.tool("client-repaired", "present_artifact", { artifactId: "original" }))
+    yield* s.resume
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({ type: "user" }),
+      Expected.assistant({}, [{ type: "tool", id: "client-repaired", state: { status: "waiting-client", input: { artifactId: "repaired" } } }]),
+    ])
+  })
+
+  scenario("client tool admission cannot redirect execution to a local tool", function* (s) {
+    const hooks = yield* PluginHooks.Service
+    yield* hooks.register("tool", "execute.before", (event) => Effect.sync(() => {
+      if (event.tool === "present_artifact") event.tool = "echo"
+    }))
+    yield* s.session.prompt({ sessionID, text: "Present", resume: false,
+      clientTools: [{ name: "present_artifact", description: "Present", inputSchema: { type: "object", properties: {} } }] })
+    yield* s.llm.push(TestLLM.tool("client-redirect", "present_artifact", {}), TestLLM.text("Cannot present", "redirect-response"))
+    yield* s.resume
+    expect(s.executions).toEqual([])
+    expect(yield* s.context).toMatchObject([
+      expect.objectContaining({ type: "user" }),
+      Expected.assistant({}, [Expected.failedTool({ id: "client-redirect" }, { error: { message: "Client tool admission cannot change execution target" } })]),
+      Expected.assistant({}, [Expected.text("Cannot present")]),
+    ])
+  })
+
   scenario("acknowledges a client tool result before its resumed turn settles", function* (s) {
     const continuation = yield* Deferred.make<void>()
     yield* s.session.prompt({
