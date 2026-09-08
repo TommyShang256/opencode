@@ -137,6 +137,10 @@ export const make = Effect.gen(function* () {
               // A remote execution cannot be redirected after choosing its client owner.
               if (checked.tool !== event.name)
                 return yield* new Tool.Error({ message: "Client tool admission cannot change execution target" })
+              yield* hooks.trigger("tool", "execute.validate", {
+                tool: event.name, sessionID: input.sessionID, agent: input.agent,
+                messageID: input.assistantMessageID, id: Tool.CallID.make(event.id), input: checked.input,
+              })
               return { input: checked.input }
             }).pipe(
               Effect.catchTag("Tool.Error", (error) =>

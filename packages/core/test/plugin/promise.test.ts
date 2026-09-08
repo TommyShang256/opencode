@@ -32,7 +32,7 @@ import { host } from "./host"
 const it = testEffect(PluginTestLayer)
 
 describe("fromPromise", () => {
-  it.effect("preserves explicit Promise tool rejection as a typed failure before execution", () =>
+  for (const phase of ["execute.before", "execute.validate"] as const) it.effect(`preserves explicit Promise tool rejection in ${phase}`, () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service
       const registry = yield* Tool.Service
@@ -44,7 +44,7 @@ describe("fromPromise", () => {
         execute: () => Effect.sync(() => { calls.push("executed"); return { output: "ok" } }),
       }))
       yield* PluginPromise.fromPromise(define({ id: "promise-tool-rejection", setup: async (ctx) => {
-        await ctx.tool.hook("execute.before", (event) => {
+        await ctx.tool.hook(phase, (event) => {
           if (event.id === "call_reject") ctx.tool.reject("TOOL_NOT_AVAILABLE")
           if (event.id === "call_reject_async") return Promise.resolve().then(() => ctx.tool.reject("TOOL_NOT_AVAILABLE"))
           if (event.id === "call_bug") throw new Error("unexpected plugin bug")
@@ -762,6 +762,15 @@ describe("fromPromise", () => {
             expect(event.tool).toBe("helllo")
             expect(event).not.toHaveProperty("inputSchema")
             event.tool = "hello"
+          })
+          await ctx.tool.hook("execute.validate", (event) => {
+            expect(event.tool).toBe("hello")
+            Reflect.set(event, "tool", "different")
+            Reflect.set(event.input as object, "name", "tampered")
+          })
+          await ctx.tool.hook("execute.validate", (event) => {
+            expect(event.tool).toBe("hello")
+            expect(event.input).toEqual({ name: "world" })
           })
         },
       })

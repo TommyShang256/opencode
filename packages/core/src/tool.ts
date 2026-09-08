@@ -122,6 +122,10 @@ const layer = Layer.effect(
       input: unknown,
       context: Tool.Context,
     ) {
+      yield* hooks.trigger("tool", "execute.validate", {
+        tool: name, sessionID: context.sessionID, agent: context.agent,
+        messageID: context.messageID, id: context.id, input,
+      })
       const execution = yield* execute(tool, input, context).pipe(
         Effect.map((value) => ({ value })),
         Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),

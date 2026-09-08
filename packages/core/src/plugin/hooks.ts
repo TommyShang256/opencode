@@ -20,7 +20,7 @@ export interface Domains {
 
 type NoFailures<Spec> = { readonly [Name in keyof Spec]: never }
 
-// Failure channel for each hook event. Only tool execute.before may fail: a Tool.Error rejects the call before it runs.
+// Failure channel for each hook event. Pre-execution Tool.Error rejects the call before it runs.
 interface Failures extends Record<keyof Domains, unknown> {
   readonly aisdk: NoFailures<AISDKHooks>
   readonly session: NoFailures<SessionHooks>
@@ -88,7 +88,12 @@ const layer = Layer.effect(
     const trigger: Interface["trigger"] = Effect.fnUntraced(function* (domain, name, event) {
       for (const entry of callbacks.get(key(domain, name)) ?? []) {
         if (entry.options?.providerID !== undefined && entry.options.providerID !== eventProviderID(event)) continue
-        const result: Effect.Effect<void, Failures[typeof domain][typeof name]> = entry.callback(event)
+        const result: Effect.Effect<void, Failures[typeof domain][typeof name]> = Reflect.apply(
+          entry.callback,
+          undefined,
+          // Final validators cannot rewrite the actual invocation or another validator's view.
+          [domain === "tool" && name === "execute.validate" ? structuredClone(event) : event],
+        )
         yield* result
       }
       return event

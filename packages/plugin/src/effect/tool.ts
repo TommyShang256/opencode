@@ -18,6 +18,15 @@ export interface ToolEditor {
 }
 
 export interface ToolHooks {
+  /** Final resolved identity and repaired input. Each callback receives a detached snapshot. */
+  readonly "execute.validate": {
+    readonly tool: string
+    readonly sessionID: Session.ID
+    readonly agent: Agent.ID
+    readonly messageID: SessionMessage.ID
+    readonly id: Tool.CallID
+    readonly input: unknown
+  }
   readonly "execute.before": {
     tool: string
     readonly sessionID: Session.ID
@@ -45,9 +54,10 @@ export interface ToolHooks {
   )
 }
 
-// Only execute.before may fail: a Tool.Error rejects the call before the tool runs.
+// Pre-execution hooks may reject the call without invoking its executor.
 export interface ToolFailures extends Record<keyof ToolHooks, unknown> {
   readonly "execute.before": Tool.Error
+  readonly "execute.validate": Tool.Error
   readonly "execute.after": never
 }
 

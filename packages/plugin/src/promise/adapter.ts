@@ -504,7 +504,7 @@ export function fromPromise(plugin: Plugin) {
                 ),
               ),
             hook: (name, callback) =>
-              register(host.tool.hook(name, (event) => (name === "execute.before"
+              register(host.tool.hook(name, (event) => (name === "execute.before" || name === "execute.validate"
                 ? Effect.tryPromise({ try: () => Promise.resolve(callback(event)), catch: (cause) => cause }).pipe(
                     Effect.catch((cause) => cause instanceof Tool.Error ? Effect.fail(cause) : Effect.die(cause)),
                   )
