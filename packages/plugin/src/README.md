@@ -125,6 +125,19 @@ await ctx.session.hook("retry", (event) => {
 
 Promise tools use complete executable tool values with async executors:
 
+An `execute.before` hook can call `ctx.tool.reject(message)` to reject an operation
+before tool side effects. This throws the existing typed `Tool.Error`; the Promise
+adapter preserves that expected failure, including in async hooks. Use a safe,
+user-appropriate message, not a raw transport exception or request payload.
+Ordinary hook exceptions remain defects. Rejection from `execute.after` also
+remains a defect: an after hook cannot undo an already executed operation.
+
+```ts
+await ctx.tool.hook("execute.before", (event) => {
+  if (!allowed(event.sessionID, event.tool)) ctx.tool.reject("Tool is not available for this task")
+})
+```
+
 ```ts
 import { Schema } from "effect"
 
