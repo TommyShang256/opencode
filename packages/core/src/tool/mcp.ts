@@ -67,6 +67,7 @@ export const layer = Layer.effect(
                         name: tool.name,
                         args: (input ?? {}) as Record<string, unknown>,
                         sessionID: context.sessionID,
+                        invocation: { agent: context.agent, messageID: context.messageID, id: context.id },
                       })
                       .pipe(
                         Effect.catchTags({

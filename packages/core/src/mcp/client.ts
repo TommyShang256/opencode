@@ -27,9 +27,12 @@ import {
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ConfigMCP } from "@opencode/schema/config/mcp"
 import type { Session } from "@opencode/schema/session"
+import type { Tool } from "@opencode/schema/tool"
 import { McpStdio } from "./stdio.js"
 
 const DEFAULT_STARTUP_TIMEOUT = 30_000
+/** Runtime provenance only; receivers still authorize the active invocation. */
+export type Invocation = Pick<Tool.Context, "agent" | "messageID" | "id">
 const DEFAULT_CATALOG_TIMEOUT = 30_000
 const DEFAULT_EXECUTION_TIMEOUT = 12 * 60 * 60 * 1_000 // 12 hours
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
@@ -155,6 +158,7 @@ export interface Connection {
     readonly name: string
     readonly args?: Record<string, unknown>
     readonly sessionID?: Session.ID
+    readonly invocation?: Invocation
   }) => Effect.Effect<CallToolResult, Error>
   readonly onClose: (callback: () => void) => void
   readonly onSessionExpired: (callback: () => void) => void
@@ -354,7 +358,7 @@ export const connect = Effect.fnUntraced(function* (
             {
               name: input.name,
               arguments: input.args ?? {},
-              ...(input.sessionID === undefined ? {} : { _meta: { "ai.opencode/sessionID": input.sessionID } }),
+              ...(input.sessionID === undefined ? {} : { _meta: { "ai.opencode/sessionID": input.sessionID, ...(input.invocation === undefined ? {} : { "ai.opencode/invocation": input.invocation }) } }),
             },
             // Requesting progress keeps long calls alive under the SDK's timeout; execution is the hard wall.
             { signal, timeout: execution, onprogress: () => {} },
