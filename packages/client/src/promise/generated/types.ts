@@ -2638,6 +2638,38 @@ export const isInstructionEntryValueTooLargeError = (value: unknown): value is I
   "_tag" in value &&
   value["_tag"] === "InstructionEntryValueTooLargeError"
 
+export type ProviderNotFoundError = {
+  readonly _tag: "ProviderNotFoundError"
+  readonly providerID: string
+  readonly message: string
+}
+export const isProviderNotFoundError = (value: unknown): value is ProviderNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProviderNotFoundError"
+
+export type PermissionDeniedError = {
+  readonly _tag: "PermissionDeniedError"
+  readonly message: string
+  readonly permission?: string | undefined
+}
+export const isPermissionDeniedError = (value: unknown): value is PermissionDeniedError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionDeniedError"
+
+export type McpServerNotFoundError = {
+  readonly _tag: "McpServerNotFoundError"
+  readonly server: string
+  readonly message: string
+}
+export const isMcpServerNotFoundError = (value: unknown): value is McpServerNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "McpServerNotFoundError"
+
+export type ProjectNotFoundError = {
+  readonly _tag: "ProjectNotFoundError"
+  readonly projectID: string
+  readonly message: string
+}
+export const isProjectNotFoundError = (value: unknown): value is ProjectNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProjectNotFoundError"
+
 export type FormNotFoundError = { readonly _tag: "FormNotFoundError"; readonly id: string; readonly message: string }
 export const isFormNotFoundError = (value: unknown): value is FormNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "FormNotFoundError"

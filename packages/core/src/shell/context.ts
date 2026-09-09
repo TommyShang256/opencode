@@ -4,7 +4,7 @@ import type { ShellCreateBefore } from "@opencode-ai/plugin/effect/shell"
 import { Context, Effect, Layer, Scope } from "effect"
 import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
 
-type Identity = NonNullable<ShellCreateBefore["toolContext"]>
+export type Identity = NonNullable<ShellCreateBefore["toolContext"]>
 
 export interface Interface {
   readonly acquire: (identity: Identity) => Effect.Effect<string, never, Scope.Scope>

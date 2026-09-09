@@ -17,7 +17,7 @@ export const McpGroup = HttpApiGroup.make("server.mcp")
     HttpApiEndpoint.get("mcp.list", "/api/mcp", {
       query: LocationQuery,
       success: Location.response(Schema.Array(Mcp.Server)),
-      error: ServiceUnavailableError,
+      error: [ServiceUnavailableError, PermissionDeniedError],
     })
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
@@ -113,7 +113,7 @@ export const McpGroup = HttpApiGroup.make("server.mcp")
       params: { server: Schema.String },
       query: LocationQuery,
       success: Location.response(Schema.Array(Mcp.ToolInfo)),
-      error: [McpServerNotFoundError, ServiceUnavailableError],
+      error: [McpServerNotFoundError, ServiceUnavailableError, PermissionDeniedError],
     })
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
