@@ -4,6 +4,8 @@ import { Mcp } from "@opencode-ai/core/mcp/index"
 import { Permission } from "@opencode-ai/core/permission"
 import { Session } from "@opencode-ai/core/session"
 import { McpTool } from "@opencode-ai/core/tool/mcp"
+import { ShellContext } from "@opencode-ai/core/shell/context"
+import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
 import {
   McpServerNotFoundError,
   PermissionDeniedError,
@@ -12,6 +14,7 @@ import {
 } from "@opencode-ai/protocol/errors"
 import { Cause, Effect, SynchronizedRef } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
+import { HttpServerRequest } from "effect/unstable/http"
 import { Api } from "../api"
 import { response } from "../location"
 import { pluginReadiness } from "./plugin-readiness"
@@ -97,11 +100,31 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
       .handle(
         "mcp.tool.call",
         Effect.fn(function* (ctx) {
+          const request = yield* HttpServerRequest.HttpServerRequest
+          const contexts = yield* ShellContext.Service
+          const reference = request.headers["x-opencode-tool-context"]
+          const toolContext = reference === undefined ? undefined : yield* contexts.resolve(reference)
+          if (reference !== undefined && toolContext === undefined) {
+            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })
+          }
+          if (toolContext && ((ctx.payload.sessionId !== undefined && ctx.payload.sessionId !== toolContext.sessionID)
+            || (ctx.payload.agent !== undefined && ctx.payload.agent !== toolContext.agent))) {
+            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_MISMATCH", permission: "mcp.bridge" })
+          }
+          yield* flushPlugins
           const service = yield* Mcp.Service
           const permission = yield* Permission.Service
           const session = yield* Session.Service
           const location = yield* Location.Service
           const agents = yield* Agent.Service
+          if (toolContext) {
+            const owner = yield* session.get(Session.ID.make(toolContext.sessionID)).pipe(
+              Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })),
+            )
+            if (owner.location.directory !== location.directory || owner.location.workspaceID !== location.workspaceID) {
+              return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_MISMATCH", permission: "mcp.bridge" })
+            }
+          }
           const tool = (yield* service.tools()).find(
             (candidate) => candidate.server === ctx.params.server && candidate.name === ctx.params.tool,
           )
@@ -116,6 +139,12 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
               permission: McpTool.name(ctx.params.server, ctx.params.tool),
             })
           }
+
+          const action = McpTool.name(ctx.params.server, ctx.params.tool)
+          const hooks = yield* PluginHooks.Service
+          yield* hooks.trigger("mcp", "bridge.validate", {
+            server: ctx.params.server, tool: ctx.params.tool, input: ctx.payload.arguments, toolContext,
+          }).pipe(Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: action })))
 
           // Agent state loads asynchronously at startup; permission rules resolve
           // via agents, and an unloaded registry fails CLOSED (deny-all). Wait
@@ -132,7 +161,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
             workspaceID: location.workspaceID,
           })
           const sessionID =
-            ctx.payload.sessionId ??
+            (toolContext ? Session.ID.make(toolContext.sessionID) : ctx.payload.sessionId) ??
             (yield* SynchronizedRef.modifyEffect(bridgeSessions, (sessions) => {
               const key = bridgeSessionKey(locationRef)
               const existing = sessions.get(key)
@@ -151,7 +180,6 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
 
           // Keep this request alive while the standard permission endpoint resolves it,
           // so both "once" and "always" have the same meaning as an LLM-owned tool call.
-          const action = McpTool.name(ctx.params.server, ctx.params.tool)
           if (!declaredCallers) {
             yield* permission
               .assert({
@@ -160,7 +188,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
                 save: ["*"],
                 metadata: { bridge: "mcp.tool.call" },
                 sessionID,
-                agent: ctx.payload.agent,
+                agent: toolContext ? Agent.ID.make(toolContext.agent) : ctx.payload.agent,
               })
               .pipe(
                 Effect.mapError((error) =>
@@ -178,11 +206,15 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
               )
           }
 
+          if (reference !== undefined && (yield* contexts.resolve(reference)) !== toolContext) {
+            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: action })
+          }
           const result = yield* service
             .callTool({
               server: ctx.params.server,
               name: ctx.params.tool,
               args: ctx.payload.arguments,
+              ...(toolContext ? { sessionID: Session.ID.make(toolContext.sessionID) } : {}),
             })
             .pipe(
               Effect.catchTags({

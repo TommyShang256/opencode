@@ -303,7 +303,9 @@ const layer = () =>
                 .spawn(
                   ChildProcess.make(sandbox.executable, sandbox.args, {
                     cwd: sandbox.cwd,
-                    env: { ...sandbox.env, OPENCODE_TOOL_CONTEXT: reference },
+                    env: { ...sandbox.env, OPENCODE_TOOL_CONTEXT: reference,
+                      OPENCODE_TOOL_DIRECTORY: toolContext ? location.directory : undefined,
+                      OPENCODE_TOOL_WORKSPACE: toolContext ? location.workspaceID : undefined },
                     stdin: "ignore",
                     detached: process.platform !== "win32",
                     forceKillAfter: Duration.seconds(3),

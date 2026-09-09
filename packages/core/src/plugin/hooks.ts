@@ -3,6 +3,7 @@ export * as PluginHooks from "./hooks.js"
 import type { AISDKHooks } from "@opencode-ai/plugin/effect/aisdk"
 import type { SessionHooks } from "@opencode-ai/plugin/effect/session"
 import type { ShellHooks } from "@opencode-ai/plugin/effect/shell"
+import type { MCPHooks, MCPFailures } from "@opencode-ai/plugin/effect/mcp"
 import type { ToolFailures, ToolHooks } from "@opencode-ai/plugin/effect/tool"
 import type { ModelHookOptions } from "@opencode-ai/plugin/effect/registration"
 import type { PermissionHooks } from "@opencode-ai/plugin/effect/permission"
@@ -11,6 +12,7 @@ import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
 import { State } from "../state.js"
 
 export interface Domains {
+  readonly mcp: MCPHooks
   readonly aisdk: AISDKHooks
   readonly session: SessionHooks
   readonly permission: PermissionHooks
@@ -22,6 +24,7 @@ type NoFailures<Spec> = { readonly [Name in keyof Spec]: never }
 
 // Failure channel for each hook event. Pre-execution Tool.Error rejects the call before it runs.
 interface Failures extends Record<keyof Domains, unknown> {
+  readonly mcp: MCPFailures
   readonly aisdk: NoFailures<AISDKHooks>
   readonly session: NoFailures<SessionHooks>
   readonly permission: NoFailures<PermissionHooks>
@@ -92,7 +95,8 @@ const layer = Layer.effect(
           entry.callback,
           undefined,
           // Final validators cannot rewrite the actual invocation or another validator's view.
-          [domain === "tool" && name === "execute.validate" ? structuredClone(event) : event],
+          [(domain === "tool" && name === "execute.validate") || (domain === "mcp" && name === "bridge.validate")
+            ? structuredClone(event) : event],
         )
         yield* result
       }

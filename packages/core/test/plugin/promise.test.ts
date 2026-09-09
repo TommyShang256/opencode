@@ -32,6 +32,29 @@ import { host } from "./host"
 const it = testEffect(PluginTestLayer)
 
 describe("fromPromise", () => {
+  it.effect("preserves typed bridge rejection without hiding plugin defects", () => Effect.gen(function* () {
+    const plugins = yield* Plugin.Service
+    const hooks = yield* PluginHooks.Service
+    const host = yield* PluginHost.make(plugins)
+    yield* PluginPromise.fromPromise(define({ id: "bridge-policy", setup: async ctx => {
+      await ctx.mcp.hook("bridge.validate", async event => {
+        if (event.tool === "denied") ctx.tool.reject("BRIDGE_DENIED")
+        if (event.tool === "bug") throw new Error("fixture defect")
+      })
+    } })).effect(host)
+    const call = (tool: string) => hooks.trigger("mcp", "bridge.validate", { server: "fixture", tool, input: {} })
+    const denied = yield* Effect.exit(call("denied"))
+    expect(Exit.isFailure(denied)).toBe(true)
+    if (Exit.isFailure(denied)) {
+      expect(Cause.hasDies(denied.cause)).toBe(false)
+      expect(Cause.hasFails(denied.cause)).toBe(true)
+    }
+    const bug = yield* Effect.exit(call("bug"))
+    expect(Exit.isFailure(bug)).toBe(true)
+    if (Exit.isFailure(bug)) expect(Cause.hasDies(bug.cause)).toBe(true)
+    yield* call("allowed")
+  }))
+
   for (const phase of ["execute.before", "execute.validate"] as const) it.effect(`preserves explicit Promise tool rejection in ${phase}`, () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service
@@ -413,7 +436,7 @@ describe("fromPromise", () => {
       const promisePlugin = define({
         id: "promise-client-reads",
         setup: async (ctx) => {
-          expect(Object.keys(ctx.mcp).sort()).toEqual(["list", "reload", "transform"])
+          expect(Object.keys(ctx.mcp).sort()).toEqual(["hook", "list", "reload", "transform"])
           const results = await Promise.all([
             ctx.agent.list(),
             ctx.catalog.provider.list(),

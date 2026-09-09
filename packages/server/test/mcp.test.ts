@@ -5,6 +5,22 @@ import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { startServer } from "./fixture/server"
 
+it.live("rejects an unissued shell reference before creating a bridge session or calling MCP", () =>
+  Effect.gen(function* () {
+    const tmp = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-mcp-scope-")))
+    const server = yield* startServer(tmp.path)
+    const url = new URL("/api/mcp/catalog/tool/lookup/call", server.base)
+    url.searchParams.set("location[directory]", tmp.path)
+    const response = yield* Effect.promise(() => fetch(url, {
+      method: "POST", signal: AbortSignal.timeout(10000),
+      headers: { ...server.headers, "content-type": "application/json", "x-opencode-tool-context": "unissued-reference" },
+      body: JSON.stringify({ arguments: {} }),
+    }))
+    expect(response.status).toBe(403)
+    expect(yield* Effect.promise(() => response.text())).toContain("MCP_BRIDGE_CONTEXT_UNAVAILABLE")
+  }),
+)
+
 for (const endpoint of ["/api/mcp", "/api/mcp/catalog/tools"]) {
   it.live(`loads configured MCP servers before the first ${endpoint} request`, () =>
     Effect.gen(function* () {

@@ -17,6 +17,7 @@ import { Session } from "@opencode-ai/core/session"
 import { Instance } from "@opencode-ai/core/instance/service"
 import { SessionTransfer } from "@opencode-ai/core/session/transfer"
 import { ShellSelect } from "@opencode-ai/core/shell/select"
+import { ShellContext } from "@opencode-ai/core/shell/context"
 import { Job } from "@opencode-ai/core/job"
 import { Mcp } from "@opencode-ai/core/mcp/index"
 import { Global } from "@opencode-ai/util/global"
@@ -48,6 +49,7 @@ import { ServerInfo } from "./server-info"
 import type { ServerOptions } from "./options"
 
 const applicationServiceNodes = [
+  ShellContext.node,
   Global.node,
   Database.node,
   Bus.node,
