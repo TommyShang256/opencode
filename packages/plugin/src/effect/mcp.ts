@@ -6,6 +6,10 @@ import type { ShellCreateBefore } from "./shell.js"
 import type { Tool } from "@opencode-ai/schema/tool"
 
 export interface MCPHooks {
+  readonly "bridge.catalog": {
+    readonly toolContext?: ShellCreateBefore["toolContext"]
+    tools: Array<{ readonly server: string; readonly name: string }>
+  }
   readonly "bridge.validate": {
     readonly server: string
     readonly tool: string
@@ -14,7 +18,7 @@ export interface MCPHooks {
   }
 }
 
-export interface MCPFailures { readonly "bridge.validate": Tool.Error }
+export interface MCPFailures { readonly "bridge.validate": Tool.Error; readonly "bridge.catalog": Tool.Error }
 
 export interface MCPDraft {
   list(): readonly [string, Types.DeepMutable<Mcp.ServerConfig>][]

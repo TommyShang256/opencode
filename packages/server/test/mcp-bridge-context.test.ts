@@ -16,9 +16,10 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     const hooks = yield* PluginHooks.Service
     const invoked: { name: string; sessionID?: string }[] = []
     const mcp = Layer.mock(Mcp.Service, {
-      tools: () => Effect.succeed(["lookup", "private"].map(name => new Mcp.Tool({
+      servers: () => Effect.succeed(["catalog", "empty"].map(name => new Mcp.ServerInfo({ name: Mcp.ServerName.make(name), status: { status: "connected" } }))),
+      tools: () => Effect.succeed(["lookup", "private", "model-only"].map(name => new Mcp.Tool({
         server: Mcp.ServerName.make("catalog"), name,
-        meta: { "com.huawei.ryoma.dataagent/allowed-callers": ["script"] },
+        meta: { "com.huawei.ryoma.dataagent/allowed-callers": [name === "model-only" ? "agent" : "script"] },
       }))),
       callTool: input => {
         invoked.push({ name: input.name, sessionID: input.sessionID })
@@ -45,6 +46,23 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     const scope = yield* Scope.make()
     yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
     const reference = yield* contexts.acquire(identity).pipe(Scope.provide(scope))
+    yield* hooks.register("mcp", "bridge.catalog", event => Effect.sync(() => {
+      event.tools = event.tools.filter(tool => tool.name === "lookup")
+    }))
+    yield* hooks.register("mcp", "bridge.catalog", event => Effect.sync(() => {
+      // A later plugin cannot restore tools removed by an earlier workbench policy.
+      event.tools.push({ server: "catalog", name: "private" }, { server: "catalog", name: "model-only" })
+    }))
+    const catalog = (route: string, scoped = true) => Effect.promise(() => handler(new Request(
+      `http://opencode.local${route}`, { headers: scoped ? { "x-opencode-tool-context": reference } : {} },
+    )))
+    const listed = yield* catalog("/api/mcp/catalog/tools")
+    expect(listed.status).toBe(200)
+    expect((yield* Effect.promise(() => listed.json())).data.map((tool: { name: string }) => tool.name)).toEqual(["lookup"])
+    const servers = yield* catalog("/api/mcp")
+    expect((yield* Effect.promise(() => servers.json())).data.map((server: { name: string }) => server.name)).toEqual(["catalog"])
+    const global = yield* catalog("/api/mcp/catalog/tools", false)
+    expect((yield* Effect.promise(() => global.json())).data).toHaveLength(3)
     const call = (tool = "lookup", body: Record<string, unknown> = {}, scoped = true, directory?: string) => Effect.promise(() => handler(new Request(
       `http://opencode.local/api/mcp/catalog/tool/${tool}/call`, {
         method: "POST", headers: { "content-type": "application/json", ...(scoped ? { "x-opencode-tool-context": reference } : {}),
@@ -73,6 +91,8 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     expect(stale.status).toBe(403)
     expect(yield* Effect.promise(() => stale.text())).toContain("MCP_BRIDGE_CONTEXT_UNAVAILABLE")
     expect((yield* call()).status).toBe(403)
+    expect((yield* catalog("/api/mcp")).status).toBe(403)
+    expect((yield* catalog("/api/mcp/catalog/tools")).status).toBe(403)
     expect(invoked).toHaveLength(1)
   }).pipe(Effect.provide(AppNodeBuilder.build(LayerNode.group([ShellContext.node, PluginHooks.node]))), Effect.scoped),
 )

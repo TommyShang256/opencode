@@ -2519,14 +2519,6 @@ export type ProviderNotFoundError = {
 export const isProviderNotFoundError = (value: unknown): value is ProviderNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "ProviderNotFoundError"
 
-export type McpServerNotFoundError = {
-  readonly _tag: "McpServerNotFoundError"
-  readonly server: string
-  readonly message: string
-}
-export const isMcpServerNotFoundError = (value: unknown): value is McpServerNotFoundError =>
-  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "McpServerNotFoundError"
-
 export type PermissionDeniedError = {
   readonly _tag: "PermissionDeniedError"
   readonly message: string
@@ -2534,6 +2526,14 @@ export type PermissionDeniedError = {
 }
 export const isPermissionDeniedError = (value: unknown): value is PermissionDeniedError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "PermissionDeniedError"
+
+export type McpServerNotFoundError = {
+  readonly _tag: "McpServerNotFoundError"
+  readonly server: string
+  readonly message: string
+}
+export const isMcpServerNotFoundError = (value: unknown): value is McpServerNotFoundError =>
+  typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "McpServerNotFoundError"
 
 export type ProjectNotFoundError = {
   readonly _tag: "ProjectNotFoundError"

@@ -91,14 +91,20 @@ const layer = Layer.effect(
     const trigger: Interface["trigger"] = Effect.fnUntraced(function* (domain, name, event) {
       for (const entry of callbacks.get(key(domain, name)) ?? []) {
         if (entry.options?.providerID !== undefined && entry.options.providerID !== eventProviderID(event)) continue
+        const catalog = domain === "mcp" && name === "bridge.catalog" ? event as MCPHooks["bridge.catalog"] : undefined
+        const catalogView = catalog ? structuredClone(catalog) : undefined
         const result: Effect.Effect<void, Failures[typeof domain][typeof name]> = Reflect.apply(
           entry.callback,
           undefined,
           // Final validators cannot rewrite the actual invocation or another validator's view.
-          [(domain === "tool" && name === "execute.validate") || (domain === "mcp" && name === "bridge.validate")
-            ? structuredClone(event) : event],
+          [catalogView ?? ((domain === "tool" && name === "execute.validate") || (domain === "mcp" && name === "bridge.validate")
+            ? structuredClone(event) : event)],
         )
         yield* result
+        if (catalog && catalogView) {
+          const allowed = new Set(catalogView.tools.map(tool => JSON.stringify([tool.server, tool.name])))
+          catalog.tools = catalog.tools.filter(tool => allowed.has(JSON.stringify([tool.server, tool.name])))
+        }
       }
       return event
     })

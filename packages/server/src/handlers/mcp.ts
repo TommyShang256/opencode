@@ -35,17 +35,14 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
       .handle(
         "mcp.list",
         Effect.fn(function* () {
+          const scope = yield* readBridgeContext()
           yield* flushPlugins
           const service = yield* Mcp.Service
-          return yield* response(
-            service
-              .servers()
-              .pipe(
-                Effect.map((servers) =>
-                  servers.map((info) => ({ name: info.name, status: info.status, integrationID: info.integrationID })),
-                ),
-              ),
-          )
+          const servers = yield* service.servers()
+          const visible = scope.reference === undefined ? undefined
+            : new Set((yield* scopedCatalog(yield* service.tools(), scope)).map(tool => tool.server))
+          return yield* response(Effect.succeed(servers.filter(info => visible === undefined || visible.has(info.name))
+            .map(info => ({ name: info.name, status: info.status, integrationID: info.integrationID }))))
         }),
       )
       .handle(
@@ -83,6 +80,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
       .handle(
         "mcp.tools.list",
         Effect.fn(function* (ctx) {
+          const scope = yield* readBridgeContext()
           yield* flushPlugins
           const service = yield* Mcp.Service
           const servers = yield* service.servers()
@@ -92,21 +90,14 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
               message: `MCP server not found: ${ctx.params.server}`,
             })
           }
-          return yield* response(
-            service.tools().pipe(Effect.map((tools) => tools.filter((tool) => tool.server === ctx.params.server))),
-          )
+          return yield* response(scopedCatalog((yield* service.tools()).filter(tool => tool.server === ctx.params.server), scope))
         }),
       )
       .handle(
         "mcp.tool.call",
         Effect.fn(function* (ctx) {
-          const request = yield* HttpServerRequest.HttpServerRequest
-          const contexts = yield* ShellContext.Service
-          const reference = request.headers["x-opencode-tool-context"]
-          const toolContext = reference === undefined ? undefined : yield* contexts.resolve(reference)
-          if (reference !== undefined && toolContext === undefined) {
-            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })
-          }
+          const scope = yield* readBridgeContext()
+          const toolContext = scope.toolContext
           if (toolContext && ((ctx.payload.sessionId !== undefined && ctx.payload.sessionId !== toolContext.sessionID)
             || (ctx.payload.agent !== undefined && ctx.payload.agent !== toolContext.agent))) {
             return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_MISMATCH", permission: "mcp.bridge" })
@@ -117,14 +108,6 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           const session = yield* Session.Service
           const location = yield* Location.Service
           const agents = yield* Agent.Service
-          if (toolContext) {
-            const owner = yield* session.get(Session.ID.make(toolContext.sessionID)).pipe(
-              Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })),
-            )
-            if (owner.location.directory !== location.directory || owner.location.workspaceID !== location.workspaceID) {
-              return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_MISMATCH", permission: "mcp.bridge" })
-            }
-          }
           const tool = (yield* service.tools()).find(
             (candidate) => candidate.server === ctx.params.server && candidate.name === ctx.params.tool,
           )
@@ -206,9 +189,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
               )
           }
 
-          if (reference !== undefined && (yield* contexts.resolve(reference)) !== toolContext) {
-            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: action })
-          }
+          yield* assertBridgeLive(scope)
           const result = yield* service
             .callTool({
               server: ctx.params.server,
@@ -243,6 +224,49 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
 function bridgeSessionKey(location: Location.Ref) {
   return `${location.workspaceID ?? "local"}\u0000${location.directory}`
 }
+
+type BridgeScope = { reference: string | undefined; toolContext: ShellContext.Identity | undefined }
+
+const readBridgeContext = Effect.fn(function* () {
+  const request = yield* HttpServerRequest.HttpServerRequest
+  const contexts = yield* ShellContext.Service
+  const reference = request.headers["x-opencode-tool-context"]
+  const toolContext = reference === undefined ? undefined : yield* contexts.resolve(reference)
+  if (reference !== undefined && toolContext === undefined) {
+    return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })
+  }
+  if (toolContext) {
+    const session = yield* Session.Service
+    const location = yield* Location.Service
+    const owner = yield* session.get(Session.ID.make(toolContext.sessionID)).pipe(
+      Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })),
+    )
+    if (owner.location.directory !== location.directory || owner.location.workspaceID !== location.workspaceID) {
+      return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_MISMATCH", permission: "mcp.bridge" })
+    }
+  }
+  return { reference, toolContext }
+})
+
+const assertBridgeLive = Effect.fn(function* (scope: BridgeScope) {
+  if (scope.reference === undefined) return
+  const contexts = yield* ShellContext.Service
+  if ((yield* contexts.resolve(scope.reference)) !== scope.toolContext) {
+    return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })
+  }
+})
+
+const scopedCatalog = Effect.fn(function* (tools: Mcp.Tool[], scope: BridgeScope) {
+  if (scope.reference === undefined) return tools // Explicit administrative inventory, not a script permission grant.
+  const candidates = tools.filter(tool => toolCallers(tool)?.includes("script") ?? true)
+  const hooks = yield* PluginHooks.Service
+  const event = yield* hooks.trigger("mcp", "bridge.catalog", {
+    toolContext: scope.toolContext, tools: candidates.map(tool => ({ server: String(tool.server), name: tool.name })),
+  }).pipe(Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: "mcp.bridge" })))
+  yield* assertBridgeLive(scope)
+  const visible = new Set(event.tools.map(tool => JSON.stringify([tool.server, tool.name])))
+  return candidates.filter(tool => visible.has(JSON.stringify([tool.server, tool.name])))
+})
 
 function toolCallers(tool: Mcp.Tool | undefined) {
   const value = tool?.meta?.[allowedCallersMetaKey]

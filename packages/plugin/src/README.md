@@ -145,8 +145,17 @@ arguments and optional resolved `toolContext`. Product plugins may reject throug
 than exposing that plugin error. The validator runs before permission prompts or
 fallback bridge-session creation. No reference means no native tool identity;
 plugins requiring scoped execution must reject that case. Existing caller and
-permission checks remain in place. This hook does not govern catalog reads or
-prove product Run/Project authorization; those remain separate responsibilities.
+permission checks remain in place. This hook does not prove product Run/Project
+authorization; that remains a separate responsibility.
+
+Scoped server/tool catalog reads use the same reference and Location checks.
+`ctx.mcp.hook("bridge.catalog", callback)` receives resolved `toolContext` and a
+mutable list of `{ server, name }` identities after script-caller filtering.
+Each callback can only narrow the previous list: additions cannot restore tools
+removed by another callback. Reference liveness is checked again after hooks.
+Expired or mismatched references return 403, not an unscoped catalog fallback.
+Unscoped administrative reads retain the installed inventory; visibility there
+does not grant permission to execute a tool.
 
 An `execute.before` hook can call `ctx.tool.reject(message)` to reject an operation
 before tool side effects. This throws the existing typed `Tool.Error`; the Promise

@@ -4,6 +4,10 @@ import type { Hooks, Transform } from "./registration.js"
 import type { ShellCreateBefore } from "./shell.js"
 
 export interface MCPHooks {
+  readonly "bridge.catalog": {
+    readonly toolContext?: ShellCreateBefore["toolContext"]
+    tools: Array<{ readonly server: string; readonly name: string }>
+  }
   readonly "bridge.validate": {
     readonly server: string
     readonly tool: string
