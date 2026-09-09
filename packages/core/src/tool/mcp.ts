@@ -1,6 +1,7 @@
 export * as McpTool from "./mcp.js"
 
 import { ToolFailure } from "@opencode-ai/ai"
+import { isDeepStrictEqual } from "node:util"
 import { McpEvent } from "@opencode-ai/schema/mcp-event"
 import { Context, Effect, Fiber, type JsonSchema, Layer, Semaphore, Stream } from "effect"
 import { makeLocationNode } from "@opencode-ai/util/effect/app-node"
@@ -120,7 +121,9 @@ export const layer = Layer.effect(
       .pipe(Effect.forkScoped)
     const reconcile = lock.withPermit(
       Effect.gen(function* () {
-        discovered = yield* mcp.tools()
+        const current = yield* mcp.tools()
+        if (isDeepStrictEqual(current, discovered)) return
+        discovered = current
         yield* tools.reload()
       }),
     )
@@ -130,7 +133,10 @@ export const layer = Layer.effect(
       Stream.runForEachArray(() => reconcile),
       Effect.forkScoped({ startImmediately: true }),
     )
-    return Service.of({ flush: Effect.asVoid(Fiber.await(initial)) })
+    // Config/plugin transforms may populate MCP after the first (empty) sweep.
+    // SessionContext calls this after plugins.flush: read the current catalog
+    // under the same lock as notifications before taking a model snapshot.
+    return Service.of({ flush: Fiber.join(initial).pipe(Effect.andThen(reconcile)) })
   }),
 )
 
