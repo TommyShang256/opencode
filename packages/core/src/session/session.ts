@@ -275,6 +275,7 @@ export const make = Effect.fn("Session.make")(function* () {
   const clientToolResults = Effect.fn("Session.clientToolResults")(function* (
     sessionID: SessionSchema.ID,
     input: {
+      readonly deliveryID?: string
       results: ReadonlyArray<
         | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
         | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
@@ -282,6 +283,12 @@ export const make = Effect.fn("Session.make")(function* () {
     },
   ) {
     yield* get(sessionID)
+    if (input.deliveryID !== undefined && !/^[A-Za-z0-9_-]{1,128}$/.test(input.deliveryID))
+      return yield* new ClientToolResultConflictError({
+        sessionID,
+        toolCallID: "",
+        message: "Invalid client tool delivery ID",
+      })
     yield* execution.awaitIdle(sessionID)
     const messages = yield* store.context(sessionID)
     const pending = new Map(
@@ -326,6 +333,7 @@ export const make = Effect.fn("Session.make")(function* () {
             id: result.toolCallId,
             error: { type: "tool.execution", message: stringifyClientToolResult(result.error) },
             content: [{ type: "text" as const, text: stringifyClientToolResult(result.error) }],
+            ...(input.deliveryID === undefined ? {} : { metadata: { clientToolDeliveryID: input.deliveryID } }),
             executed: false,
           },
         ] as const
@@ -336,6 +344,7 @@ export const make = Effect.fn("Session.make")(function* () {
           assistantMessageID: found.messageID,
           id: result.toolCallId,
           content: [{ type: "text" as const, text: stringifyClientToolResult(result.output) }],
+          ...(input.deliveryID === undefined ? {} : { metadata: { clientToolDeliveryID: input.deliveryID } }),
           executed: false,
         },
       ] as const

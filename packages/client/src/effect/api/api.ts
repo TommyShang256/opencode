@@ -281,6 +281,7 @@ export type SessionPromptOperation<E = never> = (input: SessionPromptInput) => E
 
 export type SessionClientToolResultsInput = {
   readonly sessionID: Session.ID
+  readonly deliveryID?: string | undefined
   readonly results: readonly [
     (
       | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }

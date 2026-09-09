@@ -730,6 +730,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      clientToolResults: (input: SessionClientToolResultsInput, requestOptions?: RequestOptions) =>
+        request<SessionClientToolResultsOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/client-tool-results`,
+            body: { deliveryID: input["deliveryID"], results: input["results"] },
+            successStatus: 204,
+            declaredStatuses: [409, 404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       command: (input: SessionCommandInput, requestOptions?: RequestOptions) =>
         request<SessionCommandOutput>(
           {

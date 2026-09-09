@@ -505,6 +505,14 @@ const EndpointSessionPrompt = (raw: RawClient["server.session"]) => (input: Sess
     ),
   )
 
+const EndpointSessionClientToolResults = (raw: RawClient["server.session"]) => (input: SessionClientToolResultsInput) =>
+  preserveEffect<SessionClientToolResultsOutput>()(
+    raw["session.clientToolResults"]({
+      params: { sessionID: input["sessionID"] },
+      payload: { deliveryID: input["deliveryID"], results: input["results"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
 const EndpointSessionCommand = (raw: RawClient["server.session"]) => (input: SessionCommandInput) =>
   preserveEffect<SessionCommandOutput>()(
     raw["session.command"]({
