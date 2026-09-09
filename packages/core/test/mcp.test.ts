@@ -2288,24 +2288,50 @@ testEffect(Layer.empty).live("keeps bridge-only MCP tools out of the model regis
   }),
 )
 
+testEffect(Layer.empty).effect("flush includes MCP tools discovered after the initial empty registration", () =>
+  Effect.gen(function* () {
+    const catalog = yield* Ref.make<Mcp.Tool[]>([])
+    yield* Effect.gen(function* () {
+      const registry = yield* Tool.Service
+      const registration = yield* McpTool.Service
+      yield* registration.flush
+      yield* Ref.set(catalog, [new Mcp.Tool({
+        server: Mcp.ServerName.make("demo"), name: "read_job", codemode: false,
+        inputSchema: { type: "object", properties: {} },
+      })])
+      // Config/plugin startup can complete after the initial registration. The
+      // first session snapshot must not depend on delivery of ToolsChanged.
+      const flush = yield* registration.flush.pipe(Effect.forkScoped)
+      yield* TestClock.adjust("1 second")
+      yield* Fiber.join(flush)
+      expect((yield* toolDefinitions(registry)).map(tool => tool.name)).toContain("demo_read_job")
+    }).pipe(Effect.provide(AppNodeBuilder.build(LayerNode.group([Tool.node, McpTool.node]), [
+      Mcp.node.replace(Layer.mock(Mcp.Service, { tools: () => Ref.get(catalog) })),
+      Permission.node.replace(Layer.mock(Permission.Service, { assert: () => Effect.void })),
+      Image.node.replace(imagePassthrough),
+    ])))
+  }),
+)
+
 testEffect(Layer.empty).effect("coalesces queued MCP tool notifications after initial registration", () => {
   let reads = 0
   return Effect.gen(function* () {
     const registry = yield* Tool.Service
     const registration = yield* McpTool.Service
     const bus = yield* Bus.Service
-    yield* registration.flush
-    expect(reads).toBe(1)
-    expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["demo_read_1", "execute"])
+    const flush = yield* registration.flush.pipe(Effect.forkScoped)
+    yield* TestClock.adjust("1 second")
+    yield* Fiber.join(flush)
+    expect(reads).toBe(2)
+    expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["demo_read_2", "execute"])
 
     yield* bus.publish(McpEvent.ToolsChanged, { server: "demo" })
     yield* advance(() => reads >= 2)
     expect(reads).toBe(2)
     yield* Effect.forEach(Array.from({ length: 20 }), () => bus.publish(McpEvent.ToolsChanged, { server: "demo" }))
-    yield* advance(() => reads >= 3)
-    yield* drain
-    expect(reads).toBe(3)
-    expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["demo_read_3", "execute"])
+    yield* TestClock.adjust("2 seconds")
+    expect(reads).toBe(4)
+    expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["demo_read_4", "execute"])
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(LayerNode.group([Tool.node, McpTool.node, Bus.node]), [
