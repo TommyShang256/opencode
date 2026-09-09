@@ -229,6 +229,7 @@ export const Plugin = {
                     invocation.env.OPENCODE_SESSION_ID = context.sessionID
                     finalTimeout = yield* prepare(invocation, context)
                   }),
+                { sessionID: context.sessionID, messageID: context.messageID, executionID: context.id, agent: context.agent },
               )
               yield* context.progress({ shellID: info.id })
 

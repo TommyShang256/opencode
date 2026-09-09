@@ -1738,6 +1738,39 @@ describe("ShellTool", () => {
   )
 
   it.live(
+    "passes native tool identity to shell hooks without deriving it from command input",
+    () =>
+      Effect.acquireUseRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => {
+          reset()
+          return withSession(tmp.path, (registry) =>
+            Effect.gen(function* () {
+              const hooks = yield* PluginHooks.Service
+              const contexts: unknown[] = []
+              yield* hooks.register("shell", "create.before", (invocation) =>
+                Effect.sync(() => { contexts.push(invocation.toolContext) }),
+              )
+              yield* executeTool(registry, call({ command: helloCommand }, "call-native-context"))
+              expect(contexts).toEqual([{
+                sessionID, messageID: toolIdentity.messageID, agent: toolIdentity.agent,
+                executionID: "call-native-context",
+              }])
+              expect(Object.isFrozen(contexts[0])).toBe(true)
+              const shell = yield* Shell.Service
+              const direct = yield* shell.create({ command: helloCommand, timeout: 5000,
+                metadata: { sessionID, executionID: "forged" } })
+              yield* shell.wait(direct.id)
+              expect(contexts[1]).toBeUndefined()
+            }),
+          )
+        },
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+      ),
+    { timeout: 15_000 },
+  )
+
+  it.live(
     "reports shell ID progress once",
     () =>
       Effect.acquireUseRelease(

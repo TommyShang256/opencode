@@ -125,6 +125,16 @@ await ctx.session.hook("retry", (event) => {
 
 Promise tools use complete executable tool values with async executors:
 
+The `shell.create.before` event also exposes optional, read-only `toolContext`
+(`sessionID`, `messageID`, `executionID`, `agent`). For a native shell tool this is
+a frozen copy of its execution identity supplied by Core, not parsed from the
+command, environment or public shell metadata. Direct shell API calls have no
+`toolContext`, even if their metadata contains similarly named fields. Plugins
+may use this association to prepare execution-scoped integration state; it is
+not an authorization token or proof that the execution is still active. Keep
+external bridge authorization and expiry checks at the bridge itself. No IDs
+are automatically injected into the child environment or persisted by this hook.
+
 An `execute.before` hook can call `ctx.tool.reject(message)` to reject an operation
 before tool side effects. This throws the existing typed `Tool.Error`; the Promise
 adapter preserves that expected failure, including in async hooks. Use a safe,
