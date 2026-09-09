@@ -8,15 +8,16 @@ import { SessionEvent } from "@opencode-ai/core/session/event"
 import { SessionExecution } from "@opencode-ai/core/session/execution"
 import { SessionMessage } from "@opencode-ai/core/session/message"
 import { Money } from "@opencode-ai/schema/money"
-import { Effect, Layer } from "effect"
+import { Deferred, Effect, Layer } from "effect"
 import { it } from "../../core/test/lib/effect"
 import { ServerFetch } from "../src/fetch"
 
-it.live("accepts a client-owned native tool result over the session HTTP API", () =>
+it.live("acknowledges a client-owned result before continuation completes and consumes it only once", () =>
   Effect.gen(function* () {
     const userMessageID = SessionMessage.ID.create()
     const assistantMessageID = SessionMessage.ID.create()
     let resumes = 0
+    const continuation = yield* Deferred.make<void>()
     const execution = Layer.effect(
       SessionExecution.Service,
       Effect.gen(function* () {
@@ -24,7 +25,7 @@ it.live("accepts a client-owned native tool result over the session HTTP API", (
         return SessionExecution.Service.of({
           active: Effect.succeed(new Set()),
           isActive: () => Effect.succeed(false),
-          resume: () => Effect.sync(() => void resumes++),
+          resume: () => Effect.sync(() => void resumes++).pipe(Effect.andThen(Deferred.await(continuation))),
           wake: (sessionID) =>
             Effect.gen(function* () {
               yield* bus.publish(SessionEvent.InboxDelivered, { sessionID, inboxID: userMessageID })
@@ -153,8 +154,11 @@ it.live("accepts a client-owned native tool result over the session HTTP API", (
         }),
       )
     const submitted = yield* Effect.promise(() => Promise.all([submitResult(), submitResult()]))
+      .pipe(Effect.timeout("2 seconds"))
     expect(submitted.map((response) => response.status).toSorted()).toEqual([204, 409])
     expect(resumes).toBe(1)
+    expect(yield* Deferred.isDone(continuation)).toBe(false)
+    yield* Deferred.succeed(continuation, undefined)
     const message = yield* Effect.promise(() =>
       handler(new Request(`http://opencode.local/api/session/${sessionID}/message/${assistantMessageID}`)).then(
         (response) => response.json(),
