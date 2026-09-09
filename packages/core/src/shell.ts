@@ -61,6 +61,7 @@ export interface Interface {
   readonly create: <E = never, R = never>(
     input: CreateInput,
     before?: (input: ShellCreateBefore) => Effect.Effect<void, E, R>,
+    toolContext?: ShellCreateBefore["toolContext"],
   ) => Effect.Effect<Shell.Info, E | AppProcess.AppProcessError, R>
   // Currently running commands only; exited shells are retained for get/output but excluded here.
   readonly list: () => Effect.Effect<Shell.Info[]>
@@ -248,6 +249,7 @@ const layer = () =>
       const create = Effect.fn("Shell.create")(function* <E = never, R = never>(
         input: CreateInput,
         before?: (input: ShellCreateBefore) => Effect.Effect<void, E, R>,
+        toolContext?: ShellCreateBefore["toolContext"],
       ) {
         const sessionID = input.metadata?.sessionID
         const sessionEnvironment =
@@ -255,6 +257,7 @@ const layer = () =>
             ? yield* environments.get(sessionID)
             : undefined
         const invocation: ShellCreateBefore = {
+          toolContext: toolContext === undefined ? undefined : Object.freeze({ ...toolContext }),
           command: input.command,
           cwd: input.cwd ?? location.directory,
           timeout: input.timeout,
