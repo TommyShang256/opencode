@@ -248,6 +248,12 @@ describe("SubagentTool", () => {
             messages,
           )
           expect(yield* jobs.pendingBackground).toEqual([])
+          const childInputs = (yield* sessions.context(outputSessionID(result.metadata)))
+            .filter((message) => message.type === "user")
+          expect(childInputs).toHaveLength(1)
+          expect(childInputs[0]?.metadata).toEqual({
+            subagentInvocation: { sessionID: parent.id, messageID: "msg_tool_test", executionID: "call-completion-replay" },
+          })
         }),
       ),
     ),
@@ -483,6 +489,14 @@ describe("SubagentTool", () => {
               message.type === "user" ? [message.payload.text] : [],
             ),
           ).toEqual(["You are a subagent spawned by another session.\nreview this", "continue this"])
+          expect(
+            (yield* sessions.inbox(childID)).flatMap((message) =>
+              message.type === "user" ? [message.payload.metadata] : [],
+            ),
+          ).toEqual([
+            { subagentInvocation: { sessionID: parent.id, messageID: "msg_tool_test", executionID: "call-subagent-first" } },
+            { subagentInvocation: { sessionID: parent.id, messageID: "msg_tool_test", executionID: "call-subagent-second" } },
+          ])
           expect(second.content).toEqual([{ type: "text", text: completedOutput(childID) }])
         }),
       ),
