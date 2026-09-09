@@ -124,6 +124,12 @@ describe("Session.updateMessage", () => {
       const db = (yield* Database.Service).db
       const created = yield* session.create({ location })
       const messageID = SessionMessage.ID.create()
+      const source = SessionMessage.ID.create()
+      yield* bus.publish(SessionEvent.InboxEnqueued, {
+        sessionID: created.id, inboxID: source,
+        item: { type: "user", payload: { text: "origin" }, delivery: "steer" },
+      })
+      yield* bus.publish(SessionEvent.InboxDelivered, { sessionID: created.id, inboxID: source })
       yield* start(bus, created.id, messageID)
       yield* complete(bus, created.id, messageID)
       const content = [
@@ -168,7 +174,7 @@ describe("Session.updateMessage", () => {
           .run()
           .pipe(Effect.orDie)
         yield* Effect.forEach(serialized, (event) => replay.replay(event), { discard: true })
-        expect((yield* store.message(messageID))?.message).toMatchObject({ content })
+        expect((yield* store.message(messageID))?.message).toMatchObject({ content, sourceMessageID: source })
       }).pipe(Effect.provide(Layer.fresh(target)))
     }),
   )

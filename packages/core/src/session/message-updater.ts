@@ -8,6 +8,7 @@ export interface Adapter {
   readonly getModel: () => Effect.Effect<SessionMessage.ModelSelected["model"] | undefined>
   readonly getLocation: () => Effect.Effect<SessionMessage.LocationSwitched["previous"]>
   readonly getCurrentAssistant: () => Effect.Effect<SessionMessage.Assistant | undefined>
+  readonly getLatestInputMessageID: () => Effect.Effect<SessionMessage.ID | undefined>
   readonly getAssistant: (messageID: SessionMessage.ID) => Effect.Effect<SessionMessage.Assistant | undefined>
   readonly getShell: (shellID: SessionMessage.Shell["shellID"]) => Effect.Effect<SessionMessage.Shell | undefined>
   readonly getCompaction: () => Effect.Effect<SessionMessage.Compaction | undefined>
@@ -226,6 +227,7 @@ export function update(adapter: Adapter, event: SessionEvent.DurableEvent) {
             SessionMessage.Assistant.make({
               id: event.data.assistantMessageID,
               type: "assistant",
+              sourceMessageID: yield* adapter.getLatestInputMessageID(),
               agent: event.data.agent,
               model: event.data.model,
               metadata: event.metadata,

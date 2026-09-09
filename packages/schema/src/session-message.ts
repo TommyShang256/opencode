@@ -227,6 +227,8 @@ export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
   type: Schema.tag("assistant"),
+  /** Latest delivered user or synthetic input at the first start of this step; retries retain it. */
+  sourceMessageID: ID.pipe(optional),
   agent: Agent.ID,
   model: Model.Ref,
   content: AssistantContent.pipe(Schema.Array),
