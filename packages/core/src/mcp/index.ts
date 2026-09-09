@@ -157,6 +157,7 @@ export interface Interface extends State.Transformable<Editor> {
     readonly args?: Record<string, unknown>
     readonly sessionID?: Session.ID
     readonly invocation?: McpClient.Invocation
+    readonly scriptContext?: McpClient.ScriptContext
   }) => Effect.Effect<ToolResult, NotFoundError | ToolCallError>
   readonly instructions: () => Effect.Effect<ServerInstructions[]>
   readonly prompts: () => Effect.Effect<Prompt[]>
@@ -752,7 +753,13 @@ export const layer = (options?: Options) =>
               message: "MCP server is not connected",
             })
           const result = yield* recovering(target.name, target.entry, target.entry.client, (connection) =>
-            connection.callTool({ name: input.name, args: input.args, sessionID: input.sessionID, invocation: input.invocation }),
+            connection.callTool({
+              name: input.name,
+              args: input.args,
+              sessionID: input.sessionID,
+              invocation: input.invocation,
+              scriptContext: input.scriptContext,
+            }),
           ).pipe(
             Effect.mapError(
               (error) => new ToolCallError({ server: target.name, tool: input.name, message: error.message }),
