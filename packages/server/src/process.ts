@@ -3,13 +3,14 @@ export * as ServerProcess from "./process"
 import { NodeHttpServer } from "@effect/platform-node"
 import { Bus } from "@opencode/core/bus"
 import { SessionRestart } from "@opencode/core/session/execution/restart"
+import { ShellContext } from "@opencode/core/shell/context"
 import { InstallationEvent } from "@opencode/schema/installation-event"
 import { hasPtyConnectTicketURL } from "@opencode/protocol/groups/pty"
 import { hasPersistentPtyConnectTicketURL } from "@opencode/protocol/groups/persistent-pty"
 import { isPairingConnectURL } from "@opencode/protocol/groups/server"
 import { Global } from "@opencode/util/global"
 import { Cause, Context, Effect, Exit, Latch, Layer, Option, Ref, Scope } from "effect"
-import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import { HttpMiddleware, HttpEffect, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { createServer } from "node:http"
 import { ServerAuth } from "./auth"
 import { isAllowedCorsOrigin } from "./cors"
@@ -19,6 +20,7 @@ import { createRoutes } from "./routes"
 import { ServerInfo } from "./server-info"
 import { Status } from "./service-status"
 import type { ServerOptions } from "./options"
+import { McpSocket } from "./mcp-socket"
 
 export interface Lifecycle<E = never, R = never> {
   readonly onListen: (
@@ -101,6 +103,14 @@ export const start = Effect.fn("ServerProcess.start")(function* <E, R>(
       ).pipe(Layer.provideMerge(NodeHttpServer.layerHttpServices)),
       applicationScope,
     )
+    if (process.platform !== "win32") {
+      const handler = Context.get(context, HttpRouter.HttpRouter).asHttpEffect().pipe(HttpEffect.toWebHandlerWith(context))
+      yield* McpSocket.install(Context.get(context, ShellContext.Service), request => {
+        const headers = new Headers(request.headers)
+        headers.set("authorization", `Basic ${Buffer.from(`opencode:${password}`, "utf8").toString("base64")}`)
+        return handler(new Request(request, { headers }))
+      }, process.env.OPENCODE_TOOL_BRIDGE_CLIENT).pipe(Scope.provide(applicationScope))
+    }
     if (lifecycle) {
       yield* installRestartContinuity(Context.get(context, SessionRestart.Service)).pipe(
         Effect.provideService(Scope.Scope, applicationScope),

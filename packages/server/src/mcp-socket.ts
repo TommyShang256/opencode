@@ -1,11 +1,40 @@
 export * as McpSocket from "./mcp-socket"
 
 import { createServer } from "node:http"
-import { chmod, mkdtemp, rm } from "node:fs/promises"
+import { access, chmod, mkdtemp, realpath, rm, stat } from "node:fs/promises"
+import { constants } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
+import { Effect } from "effect"
+import { ShellContext } from "@opencode-ai/core/shell/context"
 
 const limit = 4 * 1024 * 1024
+
+/** Node host assembly; clients are trusted deployment inputs, never Shell request parameters. */
+export const install = Effect.fn("McpSocket.install")(function* (
+  contexts: ShellContext.Interface,
+  dispatch: Options["dispatch"],
+  client?: string,
+) {
+  const clients = client === undefined ? [] : [yield* Effect.tryPromise({
+    try: async () => {
+      if (!path.isAbsolute(client)) throw new Error("Invalid client path")
+      const file = await realpath(client)
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(path.basename(file)) || !(await stat(file)).isFile()) {
+        throw new Error("Invalid client file")
+      }
+      await access(file, constants.X_OK)
+      return file
+    },
+    catch: () => new Error("Shell bridge client is unavailable"),
+  })]
+  yield* contexts.installBridge(async input => {
+    const connection = await open({ reference: input.reference, directory: input.directory, workspace: input.workspaceID,
+      live: () => Effect.runPromise(contexts.resolve(input.reference)).then(identity => identity !== undefined), dispatch,
+    })
+    return { socket: connection.path, clients, close: connection.close }
+  })
+})
 
 export interface Options {
   readonly reference: string
