@@ -135,6 +135,8 @@ import type {
   IntegrationCommandStatusOutput,
   IntegrationCommandCancelInput,
   IntegrationCommandCancelOutput,
+  McpBridgeContextInput,
+  McpBridgeContextOutput,
   McpListInput,
   McpListOutput,
   McpAddInput,
@@ -1318,6 +1320,20 @@ export function make(options: ClientOptions) {
       },
     },
     mcp: {
+      bridge: {
+        context: (input?: McpBridgeContextInput, requestOptions?: RequestOptions) =>
+          request<McpBridgeContextOutput>(
+            {
+              method: "GET",
+              path: `/api/mcp/bridge/context`,
+              query: { location: input?.["location"] },
+              successStatus: 200,
+              declaredStatuses: [403, 401, 400],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
       list: (input?: McpListInput, requestOptions?: RequestOptions) =>
         request<McpListOutput>(
           {

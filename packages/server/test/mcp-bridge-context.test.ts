@@ -56,6 +56,12 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     const catalog = (route: string, scoped = true) => Effect.promise(() => handler(new Request(
       `http://opencode.local${route}`, { headers: scoped ? { "x-opencode-tool-context": reference } : {} },
     )))
+    const resolved = yield* catalog("/api/mcp/bridge/context")
+    expect(resolved.status).toBe(200)
+    const resolvedBody = yield* Effect.promise(() => resolved.json())
+    expect(resolvedBody.data).toEqual(identity)
+    expect(JSON.stringify(resolvedBody)).not.toContain(reference)
+    expect((yield* catalog("/api/mcp/bridge/context", false)).status).toBe(403)
     const listed = yield* catalog("/api/mcp/catalog/tools")
     expect(listed.status).toBe(200)
     expect((yield* Effect.promise(() => listed.json())).data.map((tool: { name: string }) => tool.name)).toEqual(["lookup"])
@@ -73,6 +79,11 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     expect((yield* call()).status).toBe(200)
     expect(invoked).toEqual([{ name: "lookup", sessionID: identity.sessionID }])
     const foreign = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("bridge-foreign-location-")))
+    const foreignContext = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/mcp/bridge/context", {
+      headers: { "x-opencode-tool-context": reference, "x-opencode-directory": encodeURIComponent(foreign.path) },
+    })))
+    expect(foreignContext.status).toBe(403)
+    expect(yield* Effect.promise(() => foreignContext.text())).not.toContain(reference)
     expect((yield* call("lookup", {}, true, foreign.path)).status).toBe(403)
     for (const body of [{ sessionId: "ses_other" }, { agent: "other" }]) {
       const denied = yield* call("lookup", body)
@@ -93,6 +104,7 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     expect((yield* call()).status).toBe(403)
     expect((yield* catalog("/api/mcp")).status).toBe(403)
     expect((yield* catalog("/api/mcp/catalog/tools")).status).toBe(403)
+    expect((yield* catalog("/api/mcp/bridge/context")).status).toBe(403)
     expect(invoked).toHaveLength(1)
   }).pipe(Effect.provide(AppNodeBuilder.build(LayerNode.group([ShellContext.node, PluginHooks.node]))), Effect.scoped),
 )

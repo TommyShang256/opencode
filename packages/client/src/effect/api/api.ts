@@ -1739,8 +1739,26 @@ export interface IntegrationApi<E = never> {
   }
 }
 
-export type McpListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
-export type McpListOutput = { readonly location: Location.PublicRef; readonly data: ReadonlyArray<Mcp.Server> }
+export type McpBridgeContextInput = {
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+}
+export type McpBridgeContextOutput = {
+  readonly location: Location.Info
+  readonly data: {
+    readonly sessionID: Session.ID
+    readonly messageID: string
+    readonly executionID: string
+    readonly agent: Agent.ID
+  }
+}
+export type McpBridgeContextOperation<E = never> = (
+  input?: McpBridgeContextInput,
+) => Effect.Effect<McpBridgeContextOutput, E>
+
+export type McpListInput = {
+  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+}
+export type McpListOutput = { readonly location: Location.Info; readonly data: ReadonlyArray<Mcp.Server> }
 export type McpListOperation<E = never> = (input?: McpListInput) => Effect.Effect<McpListOutput, E>
 
 export type McpAddInput = {
@@ -1797,6 +1815,7 @@ export type McpToolCallOutput = Mcp.ToolCallResult
 export type McpToolCallOperation<E = never> = (input: McpToolCallInput) => Effect.Effect<McpToolCallOutput, E>
 
 export interface McpApi<E = never> {
+  readonly bridge: { readonly context: McpBridgeContextOperation<E> }
   readonly list: McpListOperation<E>
   readonly add: McpAddOperation<E>
   readonly remove: McpRemoveOperation<E>
