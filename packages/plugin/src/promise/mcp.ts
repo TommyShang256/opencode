@@ -1,6 +1,17 @@
 import type { McpApi } from "@opencode/client/promise/api"
 import type { Mcp } from "@opencode/schema/mcp"
 import type { Transform } from "./registration.js"
+import type { Hooks } from "./registration.js"
+import type { ShellCreateBefore } from "./shell.js"
+
+export interface MCPHooks {
+  readonly "bridge.validate": {
+    readonly server: string
+    readonly tool: string
+    readonly input: Record<string, unknown>
+    readonly toolContext?: ShellCreateBefore["toolContext"]
+  }
+}
 import type { DeepMutable } from "./types.js"
 
 export interface MCPEditor {
@@ -12,6 +23,6 @@ export interface MCPEditor {
 }
 
 export interface MCPDomain extends Pick<McpApi, "list"> {
-  readonly transform: Transform<MCPEditor>
-  readonly reload: () => Promise<void>
+  readonly hook: Hooks<MCPHooks>
+  readonly transform: Transform<MCPEditor>  readonly reload: () => Promise<void>
 }

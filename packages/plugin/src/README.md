@@ -143,8 +143,26 @@ clear this environment variable rather than inheriting another execution's
 reference. References are process-local, not durable session credentials, and
 must not be logged, included in model prompts or copied into metadata. Possession
 alone is not tool authorization: bridge consumers must still enforce their caller
-policy and current session/run state. The MCP HTTP bridge does not yet consume
-these references.
+policy and current session/run state.
+
+The MCP HTTP call bridge consumes this reference through `x-opencode-tool-context`.
+Native shell children also receive `OPENCODE_TOOL_DIRECTORY` and, for explicit
+workspace placement, `OPENCODE_TOOL_WORKSPACE`; clients use the existing location
+headers to address the owning Location rather than their current subdirectory.
+The bridge rejects unknown/revoked references, caller-supplied session/agent
+mismatches, and a different Location. It rechecks reference liveness immediately
+before the remote call. It never returns the reference or copies it into MCP tool
+arguments. A scoped call passes its resolved session ID in MCP metadata, not a
+fabricated model tool execution.
+
+`ctx.mcp.hook("bridge.validate", callback)` receives a detached view of the target,
+arguments and optional resolved `toolContext`. Product plugins may reject through
+`ctx.tool.reject`; the bridge returns a sanitized `MCP_BRIDGE_CALL_DENIED` rather
+than exposing that plugin error. The validator runs before permission prompts or
+fallback bridge-session creation. No reference means no native tool identity;
+plugins requiring scoped execution must reject that case. Existing caller and
+permission checks remain in place. This hook does not govern catalog reads or
+prove product Run/Project authorization; those remain separate responsibilities.
 
 An `execute.before` hook can call `ctx.tool.reject(message)` to reject an operation
 before tool side effects. This throws the existing typed `Tool.Error`; the Promise

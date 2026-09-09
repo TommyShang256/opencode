@@ -32,6 +32,8 @@ import { SdkPlugins } from "@opencode/core/plugin/sdk"
 import { WellKnown } from "@opencode/core/wellknown"
 import { Workspace } from "@opencode/core/workspace"
 import { Watcher } from "@opencode/core/filesystem/watcher"
+import { ShellContext } from "@opencode/core/shell/context"
+import { PluginRuntime } from "@opencode/core/plugin/runtime"
 import { HttpRouter } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Context, Effect, Layer, Option } from "effect"
@@ -50,6 +52,7 @@ import { ServerInfo } from "./server-info"
 import type { ServerOptions } from "./options"
 
 const applicationServiceNodes = [
+  ShellContext.node,
   Global.node,
   Database.node,
   Bus.node,

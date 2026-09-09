@@ -432,6 +432,10 @@ export function fromPromise(plugin: Plugin) {
             },
           },
           mcp: {
+            hook: (name, callback) => register(host.mcp.hook(name, event =>
+              Effect.tryPromise({ try: () => Promise.resolve(callback(event)), catch: cause => cause }).pipe(
+                Effect.catch(cause => cause instanceof Tool.Error ? Effect.fail(cause) : Effect.die(cause)),
+              ))),
             list: adaptApiMethod(McpEndpoints["mcp.list"], host.mcp.list),
             transform: transform(host.mcp),
             reload: () => run(host.mcp.reload()),

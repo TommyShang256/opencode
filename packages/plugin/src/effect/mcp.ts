@@ -1,7 +1,20 @@
 import type { McpApi } from "@opencode/client/effect/api"
 import type { Mcp } from "@opencode/schema/mcp"
 import type { Effect, Types } from "effect"
-import type { Transform } from "./registration.js"
+import type { Hooks, Transform } from "./registration.js"
+import type { ShellCreateBefore } from "./shell.js"
+import type { Tool } from "@opencode/schema/tool"
+
+export interface MCPHooks {
+  readonly "bridge.validate": {
+    readonly server: string
+    readonly tool: string
+    readonly input: Record<string, unknown>
+    readonly toolContext?: ShellCreateBefore["toolContext"]
+  }
+}
+
+export interface MCPFailures { readonly "bridge.validate": Tool.Error }
 
 export interface MCPEditor {
   list(): readonly [string, Types.DeepMutable<Mcp.ServerConfig>][]
@@ -12,6 +25,6 @@ export interface MCPEditor {
 }
 
 export interface MCPDomain extends Pick<McpApi<unknown>, "list"> {
-  readonly transform: Transform<MCPEditor>
-  readonly reload: () => Effect.Effect<void>
+  readonly hook: Hooks<MCPHooks, MCPFailures>
+  readonly transform: Transform<MCPEditor>  readonly reload: () => Effect.Effect<void>
 }

@@ -372,6 +372,7 @@ export const make = Effect.fn("PluginHost.make")(function* (
         }),
     },
     mcp: {
+      hook: (name, callback) => hooks.register("mcp", name, callback),
       list: (input) => {
         const ref = locationRef(input)
         if (ref && !isCurrentLocation(ref))
