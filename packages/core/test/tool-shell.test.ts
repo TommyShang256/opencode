@@ -16,6 +16,7 @@ import { Environment } from "@opencode/core/environment/index"
 import { FSUtil } from "@opencode/util/fs-util"
 import { Global } from "@opencode/util/global"
 import { Location } from "@opencode/core/location"
+import { LocationMutation } from "@opencode/core/location-mutation"
 import { FileAccess } from "@opencode/core/file-access"
 import { LocationServiceMap } from "@opencode/core/location-service-map"
 import { Model } from "@opencode/core/model"
@@ -30,11 +31,13 @@ import { SessionMessage } from "@opencode/core/session/message"
 import { SessionStore } from "@opencode/core/session/store"
 import { Permission } from "@opencode/core/permission"
 import { PermissionSaved } from "@opencode/core/permission/saved"
-import { Plugin } from "@opencode/core/plugin"
+import { PluginRuntime } from "@opencode/core/plugin/runtime"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
 import { Shell } from "@opencode/core/shell"
+import { ShellContext } from "@opencode/core/shell/context"
 import { ShellSelect } from "@opencode/core/shell/select"
-import { ID } from "@opencode/schema/shell"
+import { Shell as ShellSchema } from "@opencode/schema/shell"
 import { ShellTool } from "@opencode/core/tool/plugin/shell"
 import { ToolOutput } from "@opencode/core/tool-output"
 import { Tool } from "@opencode/core/tool"
@@ -143,6 +146,7 @@ const shellPluginSupervisor = makeLocationNode({
 })
 
 const nodes = LayerNode.group([
+  ShellContext.node,
   Database.node,
   Bus.node,
   Job.node,
@@ -1734,6 +1738,55 @@ describe("ShellTool", () => {
         },
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
       ),
+    { timeout: 15_000 },
+  )
+
+  it.live(
+    "revokes a shell context before publishing completion and never inherits a reference",
+    () => Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withSession(tmp.path, () => Effect.gen(function* () {
+          const shell = yield* Shell.Service
+          const contexts = yield* ShellContext.Service
+          const hooks = yield* PluginHooks.Service
+          yield* hooks.register("shell", "create.before", invocation => Effect.sync(() => {
+            invocation.env.OPENCODE_TOOL_CONTEXT = "unissued-parent-reference"
+          }))
+          const identity = { sessionID, ...toolIdentity, executionID: "call-scoped-shell" }
+          const command = isWindows
+            ? '[Console]::Out.Write($env:OPENCODE_TOOL_CONTEXT); Start-Sleep -Seconds 2'
+            : 'printf %s "$OPENCODE_TOOL_CONTEXT"; sleep 2'
+          const started = yield* shell.create({ command, timeout: 5000 }, undefined, identity)
+          let reference = ""
+          for (let attempt = 0; attempt < 100 && !reference; attempt++) {
+            reference = (yield* shell.output(started.id)).output
+            if (!reference) yield* Effect.sleep("10 millis")
+          }
+          expect(reference.length > 0 && reference !== "unissued-parent-reference").toBe(true)
+          expect(yield* contexts.resolve(reference)).toEqual(identity)
+          yield* shell.wait(started.id)
+          expect(yield* contexts.resolve(reference)).toBeUndefined()
+          const direct = yield* shell.create({
+            command: isWindows ? '[Console]::Out.Write($env:OPENCODE_TOOL_CONTEXT)' : 'printf %s "$OPENCODE_TOOL_CONTEXT"',
+            timeout: 5000,
+          })
+          yield* shell.wait(direct.id)
+          expect((yield* shell.output(direct.id)).output).toBe("")
+          const removed = yield* shell.create({ command, timeout: 5000 }, undefined, identity)
+          let removedReference = ""
+          for (let attempt = 0; attempt < 100 && !removedReference; attempt++) {
+            removedReference = (yield* shell.output(removed.id)).output
+            if (!removedReference) yield* Effect.sleep("10 millis")
+          }
+          expect((yield* contexts.resolve(removedReference))?.executionID).toBe(identity.executionID)
+          yield* shell.remove(removed.id)
+          expect(yield* contexts.resolve(removedReference)).toBeUndefined()
+        }))
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
+    ),
     { timeout: 15_000 },
   )
 

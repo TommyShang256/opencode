@@ -1,7 +1,7 @@
 export * as Shell from "./shell.js"
 
 import path from "path"
-import { Context, Deferred, Duration, Effect, Fiber, Latch, Layer, Schema, Schedule, Stream } from "effect"
+import { Context, Deferred, Duration, Effect, Exit, Fiber, Latch, Layer, Schema, Schedule, Scope, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { produce } from "immer"
 import { Shell } from "@opencode/schema/shell"
@@ -22,6 +22,7 @@ import { SessionSchema } from "./session/schema.js"
 import { Config } from "./config.js"
 import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
+import { ShellContext } from "./shell/context.js"
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
@@ -49,6 +50,7 @@ type Active = {
   done: Deferred.Deferred<Info, NotFoundError>
   timeoutFiber?: Fiber.Fiber<void>
   timeout?: (duration: number) => Effect.Effect<void>
+  releaseContext: Effect.Effect<void>
 }
 
 /**
@@ -128,6 +130,7 @@ const layer = () =>
       const environment = yield* Environment.Service
       const hooks = yield* PluginHooks.Service
       const environments = yield* SessionEnvironment.Service
+      const shellContexts = yield* ShellContext.Service
       const config = yield* Config.Service
       const context = yield* Effect.context()
       const runFork = Effect.runForkWith(context)
@@ -143,6 +146,7 @@ const layer = () =>
         Effect.gen(function* () {
           for (const command of commands.values()) {
             if (command.timeoutFiber) yield* Fiber.interrupt(command.timeoutFiber)
+            yield* command.releaseContext
             // Teardown interrupts pending commands; it is not a terminal command failure.
             yield* Deferred.interrupt(command.done)
           }
@@ -163,6 +167,7 @@ const layer = () =>
         if (index !== -1) exitOrder.splice(index, 1)
         if (!command) return
         commands.delete(id)
+        yield* command.releaseContext
         if (command.timeoutFiber) yield* Fiber.interrupt(command.timeoutFiber)
         // Unblock any wait still pending when the command is removed before it terminated.
         yield* Deferred.fail(command.done, new NotFoundError({ id }))
@@ -296,11 +301,15 @@ const layer = () =>
         runFork(
           Effect.scoped(
             Effect.gen(function* () {
+              const contextScope = yield* Scope.make()
+              yield* Effect.addFinalizer(() => Scope.close(contextScope, Exit.void))
+              const reference = toolContext === undefined ? undefined
+                : yield* shellContexts.acquire(toolContext).pipe(Scope.provide(contextScope))
               const handle = yield* environment.spawner
                 .spawn(
                   ChildProcess.make(sandbox.executable, sandbox.args, {
                     cwd: sandbox.cwd,
-                    env: sandbox.env,
+                    env: { ...sandbox.env, OPENCODE_TOOL_CONTEXT: reference },
                     stdin: "ignore",
                     detached: process.platform !== "win32",
                     forceKillAfter: Duration.seconds(3),
@@ -317,6 +326,7 @@ const layer = () =>
                 size: 0,
                 newlines: 0,
                 done: Deferred.makeUnsafe<Info, NotFoundError>(),
+                releaseContext: Scope.close(contextScope, Exit.void),
               }
               commands.set(id, command)
 
@@ -362,6 +372,8 @@ const layer = () =>
                     if (signal !== undefined) draft.signal = signal
                     draft.time.completed = Date.now()
                   })
+                  yield* command.releaseContext
+                  command.releaseContext = Effect.void
                   yield* beforeWait
                   yield* outputDone.await
                   // Resolve waiters with the terminal Info before any retention eviction, so an evicted
@@ -449,6 +461,7 @@ export const node = makeLocationNode({
     Environment.node,
     PluginHooks.node,
     SessionEnvironment.node,
+    ShellContext.node,
     Config.node,
     cleanupNode,
   ],
