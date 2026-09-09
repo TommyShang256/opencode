@@ -1325,7 +1325,7 @@ export function make(options: ClientOptions) {
             path: `/api/mcp`,
             query: { location: input?.["location"] },
             successStatus: 200,
-            declaredStatuses: [400, 401],
+            declaredStatuses: [503, 401, 400],
             empty: false,
           },
           requestOptions,
@@ -1387,7 +1387,36 @@ export function make(options: ClientOptions) {
               path: `/api/mcp/resource`,
               query: { location: input?.["location"] },
               successStatus: 200,
-              declaredStatuses: [400, 401],
+              declaredStatuses: [401, 400],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      tools: {
+        list: (input: McpToolsListInput, requestOptions?: RequestOptions) =>
+          request<McpToolsListOutput>(
+            {
+              method: "GET",
+              path: `/api/mcp/${encodeURIComponent(input.server)}/tools`,
+              query: { location: input["location"] },
+              successStatus: 200,
+              declaredStatuses: [404, 503, 401, 400],
+              empty: false,
+            },
+            requestOptions,
+          ),
+      },
+      tool: {
+        call: (input: McpToolCallInput, requestOptions?: RequestOptions) =>
+          request<McpToolCallOutput>(
+            {
+              method: "POST",
+              path: `/api/mcp/${encodeURIComponent(input.server)}/tool/${encodeURIComponent(input.tool)}/call`,
+              query: { location: input["location"] },
+              body: { arguments: input["arguments"], sessionId: input["sessionId"], agent: input["agent"] },
+              successStatus: 200,
+              declaredStatuses: [404, 403, 503, 401, 400],
               empty: false,
             },
             requestOptions,
