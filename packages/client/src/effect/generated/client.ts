@@ -128,6 +128,8 @@ import type {
   IntegrationCommandStatusOutput,
   IntegrationCommandCancelInput,
   IntegrationCommandCancelOutput,
+  McpBridgeContextInput,
+  McpBridgeContextOutput,
   McpListInput,
   McpListOutput,
   McpAddInput,
@@ -919,6 +921,11 @@ const adaptGroupIntegration = (raw: RawClient["server.integration"]) => ({
   },
 })
 
+const EndpointMcpBridgeContext = (raw: RawClient["server.mcp"]) => (input?: McpBridgeContextInput) =>
+  preserveEffect<McpBridgeContextOutput>()(
+    raw["mcp.bridge.context"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
 const EndpointMcpList = (raw: RawClient["server.mcp"]) => (input?: McpListInput) =>
   preserveEffect<McpListOutput>()(
     raw["mcp.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
@@ -976,6 +983,7 @@ const EndpointMcpToolCall = (raw: RawClient["server.mcp"]) => (input: McpToolCal
   )
 
 const adaptGroupMcp = (raw: RawClient["server.mcp"]) => ({
+  bridge: { context: EndpointMcpBridgeContext(raw) },
   list: EndpointMcpList(raw),
   add: EndpointMcpAdd(raw),
   remove: EndpointMcpRemove(raw),

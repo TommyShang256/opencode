@@ -14,6 +14,24 @@ import { LocationQuery, locationQueryOpenApi } from "./location.js"
 
 export const McpGroup = HttpApiGroup.make("server.mcp")
   .add(
+    HttpApiEndpoint.get("mcp.bridge.context", "/api/mcp/bridge/context", {
+      query: LocationQuery,
+      success: Location.response(Schema.Struct({
+        sessionID: Session.ID,
+        messageID: Schema.String,
+        executionID: Schema.String,
+        agent: Agent.ID,
+      })),
+      error: PermissionDeniedError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(OpenApi.annotations({
+        identifier: "v2.mcp.bridge.context",
+        summary: "Resolve a live native shell context",
+        description: "Requires x-opencode-tool-context and the owning Location. Returns execution identity, not tool authorization or a durable lease.",
+      })),
+  )
+  .add(
     HttpApiEndpoint.get("mcp.list", "/api/mcp", {
       query: LocationQuery,
       success: Location.response(Schema.Array(Mcp.Server)),

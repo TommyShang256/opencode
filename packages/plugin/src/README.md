@@ -157,6 +157,13 @@ Expired or mismatched references return 403, not an unscoped catalog fallback.
 Unscoped administrative reads retain the installed inventory; visibility there
 does not grant permission to execute a tool.
 
+`GET /api/mcp/bridge/context` resolves the same header against the owning
+Location and returns only `sessionID`, `messageID`, `executionID`, and `agent`.
+Unlike administrative catalog reads, it requires a live native reference.
+Consumers must use the existing authenticated server connection and must not log
+the reference. This snapshot enables independent product scope checks; it is not
+a durable lease, tool-call attestation, or evidence of Project authorization.
+
 An `execute.before` hook can call `ctx.tool.reject(message)` to reject an operation
 before tool side effects. This throws the existing typed `Tool.Error`; the Promise
 adapter preserves that expected failure, including in async hooks. Use a safe,

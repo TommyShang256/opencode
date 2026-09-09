@@ -33,6 +33,22 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
     const bridgeSessions = yield* SynchronizedRef.make(new Map<string, Session.ID>())
     return handlers
       .handle(
+        "mcp.bridge.context",
+        Effect.fn(function* () {
+          const scope = yield* readBridgeContext()
+          if (!scope.toolContext) {
+            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CONTEXT_UNAVAILABLE", permission: "mcp.bridge" })
+          }
+          yield* assertBridgeLive(scope)
+          return yield* response(Effect.succeed({
+            sessionID: Session.ID.make(scope.toolContext.sessionID),
+            messageID: scope.toolContext.messageID,
+            executionID: scope.toolContext.executionID,
+            agent: Agent.ID.make(scope.toolContext.agent),
+          }))
+        }),
+      )
+      .handle(
         "mcp.list",
         Effect.fn(function* () {
           const scope = yield* readBridgeContext()
