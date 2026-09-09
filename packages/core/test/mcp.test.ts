@@ -91,6 +91,7 @@ function resourceServer(
           arguments: Record<string, unknown> | undefined
           sessionID: unknown
           execution: unknown
+          script: unknown
           progressToken: unknown
         }>,
         initializations: 0,
@@ -149,6 +150,7 @@ function resourceServer(
             arguments: request.params.arguments,
             sessionID: request.params._meta?.sessionID,
             execution: request.params._meta?.execution,
+            script: request.params._meta?.script,
             progressToken: request.params._meta?.progressToken,
           })
           return Promise.resolve({ content: [] })
@@ -420,6 +422,10 @@ test("passes session IDs as MCP request metadata", async () => {
           invocation: { ...toolIdentity, id: Tool.CallID.make("call_metadata") },
         })
         yield* connection.callTool({ name: "echo" })
+        yield* connection.callTool({ name: "echo", args: { text: "script" },
+          sessionID: Session.ID.make("ses_mcp_script"),
+          scriptContext: { reference: "fixture-reference", directory: "/fixture", workspace: "wrk_fixture" },
+        })
 
         expect(server.state.toolCalls).toEqual([
           {
@@ -427,6 +433,7 @@ test("passes session IDs as MCP request metadata", async () => {
             arguments: { text: "hello" },
             sessionID: "ses_mcp_metadata",
             execution: { ...toolIdentity, id: "call_metadata" },
+            script: undefined,
             progressToken: expect.any(Number),
           },
           {
@@ -434,6 +441,12 @@ test("passes session IDs as MCP request metadata", async () => {
             arguments: {},
             sessionID: undefined,
             execution: undefined,
+            script: undefined,
+            progressToken: expect.any(Number),
+          },
+          {
+            name: "echo", arguments: { text: "script" }, sessionID: "ses_mcp_script", execution: undefined,
+            script: { reference: "fixture-reference", directory: "/fixture", workspace: "wrk_fixture" },
             progressToken: expect.any(Number),
           },
         ])

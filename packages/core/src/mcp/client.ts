@@ -33,6 +33,8 @@ import { McpStdio } from "./stdio.js"
 const DEFAULT_STARTUP_TIMEOUT = 30_000
 /** Runtime provenance only; receivers still authorize the active invocation. */
 export type Invocation = Pick<Tool.Context, "agent" | "messageID" | "id">
+/** Ephemeral bridge provenance; never include in arguments, model messages or logs. */
+export type ScriptContext = { readonly reference: string; readonly directory: string; readonly workspace?: string }
 const DEFAULT_CATALOG_TIMEOUT = 30_000
 const DEFAULT_EXECUTION_TIMEOUT = 12 * 60 * 60 * 1_000 // 12 hours
 const toError = (error: unknown) => (error instanceof Error ? error : new Error(String(error)))
@@ -163,6 +165,7 @@ export interface Connection {
     readonly args?: Record<string, unknown>
     readonly sessionID?: Session.ID
     readonly invocation?: Invocation
+    readonly scriptContext?: ScriptContext
   }) => Effect.Effect<CallToolResult, Error>
   readonly onClose: (callback: () => void) => void
   /** Registers a callback fired when the server emits an MCP logging notification. */
@@ -410,6 +413,7 @@ export const connect = Effect.fnUntraced(function* (
                 ...(input.sessionID === undefined ? {} : { _meta: {
                   sessionID: input.sessionID,
                   ...(input.invocation === undefined ? {} : { execution: input.invocation }),
+                  ...(input.scriptContext === undefined ? {} : { script: input.scriptContext }),
                 } }),
               },
               CallToolResultSchema,

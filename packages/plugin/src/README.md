@@ -137,7 +137,12 @@ The bridge rejects unknown/revoked references, caller-supplied session/agent
 mismatches, and a different Location. It rechecks reference liveness immediately
 before the remote call. It never returns the reference or copies it into MCP tool
 arguments. A scoped call passes its resolved session ID in MCP metadata, not a
-fabricated model tool execution.
+fabricated model tool execution. Native bridge calls additionally send
+`_meta.script` with the short-lived reference and native directory/workspace.
+Only the selected MCP server receives this provenance; script-enabled servers
+must be trusted to handle it without logging or persisting it. Receivers must
+resolve it through the authenticated runtime and recheck product authorization;
+the metadata itself is not proof. It never enters business tool arguments.
 
 `ctx.mcp.hook("bridge.validate", callback)` receives a detached view of the target,
 arguments and optional resolved `toolContext`. Product plugins may reject through

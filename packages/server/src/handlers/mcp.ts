@@ -212,6 +212,10 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
               name: ctx.params.tool,
               args: ctx.payload.arguments,
               ...(toolContext ? { sessionID: Session.ID.make(toolContext.sessionID) } : {}),
+              ...(scope.reference ? { scriptContext: {
+                reference: scope.reference, directory: location.directory,
+                ...(location.workspaceID ? { workspace: location.workspaceID } : {}),
+              } } : {}),
             })
             .pipe(
               Effect.catchTags({

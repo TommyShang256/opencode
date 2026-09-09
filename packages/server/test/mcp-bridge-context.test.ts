@@ -14,7 +14,7 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
   Effect.gen(function* () {
     const contexts = yield* ShellContext.Service
     const hooks = yield* PluginHooks.Service
-    const invoked: { name: string; sessionID?: string }[] = []
+    const invoked: Array<Parameters<Mcp.Interface["callTool"]>[0]> = []
     const mcp = Layer.mock(Mcp.Service, {
       servers: () => Effect.succeed(["catalog", "empty"].map(name => new Mcp.ServerInfo({ name: Mcp.ServerName.make(name), status: { status: "connected" } }))),
       tools: () => Effect.succeed(["lookup", "private", "model-only"].map(name => new Mcp.Tool({
@@ -22,7 +22,7 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
         meta: { "com.huawei.ryoma.dataagent/allowed-callers": [name === "model-only" ? "agent" : "script"] },
       }))),
       callTool: input => {
-        invoked.push({ name: input.name, sessionID: input.sessionID })
+        invoked.push(input)
         return Effect.succeed({ server: input.server, tool: input.name, isError: false, content: [] })
       },
     })
@@ -77,7 +77,9 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
       },
     )))
     expect((yield* call()).status).toBe(200)
-    expect(invoked).toEqual([{ name: "lookup", sessionID: identity.sessionID }])
+    expect(invoked).toEqual([{ server: "catalog", name: "lookup", args: {}, sessionID: identity.sessionID,
+      scriptContext: { reference, directory: expect.any(String) },
+    }])
     const foreign = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("bridge-foreign-location-")))
     const foreignContext = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/mcp/bridge/context", {
       headers: { "x-opencode-tool-context": reference, "x-opencode-directory": encodeURIComponent(foreign.path) },
