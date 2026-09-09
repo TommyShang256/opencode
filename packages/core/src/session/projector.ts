@@ -313,6 +313,20 @@ function run(db: DatabaseService, event: MessageEvent) {
           return message.type === "assistant" && !message.time.completed ? message : undefined
         })
       },
+      getLatestInputMessageID() {
+        // Fold only already delivered input in this aggregate; later prompts cannot change a step's origin.
+        return db
+          .select({ id: SessionMessageTable.id })
+          .from(SessionMessageTable)
+          .where(and(
+            eq(SessionMessageTable.session_id, event.data.sessionID),
+            inArray(SessionMessageTable.type, ["user", "synthetic"]),
+          ))
+          .orderBy(desc(SessionMessageTable.seq))
+          .limit(1)
+          .get()
+          .pipe(Effect.orDie, Effect.map((row) => row ? SessionMessage.ID.make(row.id) : undefined))
+      },
       getAssistant(messageID) {
         return Effect.gen(function* () {
           const row = yield* db

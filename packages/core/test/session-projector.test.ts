@@ -496,6 +496,34 @@ describe("SessionProjector", () => {
     }),
   )
 
+  it.effect("freezes the delivered input of a step across later input and retries", () =>
+    Effect.gen(function* () {
+      yield* seedSession()
+      const bus = yield* Bus.Service
+      const store = yield* SessionStore.Service
+      const first = SessionMessage.ID.make("msg_origin_first")
+      const second = SessionMessage.ID.make("msg_origin_second")
+      const assistant = SessionMessage.ID.make("msg_origin_assistant")
+      const next = SessionMessage.ID.make("msg_origin_next")
+      yield* bus.publish(SessionEvent.InboxEnqueued, {
+        sessionID, inboxID: first,
+        item: { type: "user", payload: { text: "first request" }, delivery: "steer" },
+      })
+      yield* bus.publish(SessionEvent.InboxDelivered, { sessionID, inboxID: first })
+      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: assistant, agent: build, model })
+      yield* bus.publish(SessionEvent.InboxEnqueued, {
+        sessionID, inboxID: second,
+        item: { type: "user", payload: { text: "next request" }, delivery: "steer" },
+      })
+      yield* bus.publish(SessionEvent.InboxDelivered, { sessionID, inboxID: second })
+      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: assistant, agent: build, model })
+      yield* bus.publish(SessionEvent.Step.Started, { sessionID, assistantMessageID: next, agent: build, model })
+      const messages = yield* store.messages({ sessionID })
+      expect(messages.find((message) => message.id === assistant)).toMatchObject({ sourceMessageID: first })
+      expect(messages.find((message) => message.id === next)).toMatchObject({ sourceMessageID: second })
+    }),
+  )
+
   it.effect("projects retry state and clears it at the next step or execution terminal", () =>
     Effect.gen(function* () {
       const db = yield* seedSession()
