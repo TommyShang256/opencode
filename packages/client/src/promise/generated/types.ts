@@ -4025,7 +4025,21 @@ export type SessionPromptOutput = { data: SessionInboxUser }["data"]
 
 export type SessionClientToolResultsInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly deliveryID?: {
+    readonly deliveryID?: string | undefined
+    readonly results: readonly [
+      (
+        | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+        | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+      ),
+      ...Array<
+        | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }
+        | { readonly toolCallId: string; readonly status: "failed"; readonly error: unknown }
+      >,
+    ]
+  }["deliveryID"]
   readonly results: {
+    readonly deliveryID?: string | undefined
     readonly results: readonly [
       (
         | { readonly toolCallId: string; readonly status: "completed"; readonly output: unknown }

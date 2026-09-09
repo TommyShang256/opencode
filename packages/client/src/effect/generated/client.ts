@@ -485,7 +485,7 @@ const EndpointSessionClientToolResults = (raw: RawClient["server.session"]) => (
   preserveEffect<SessionClientToolResultsOutput>()(
     raw["session.clientToolResults"]({
       params: { sessionID: input["sessionID"] },
-      payload: { results: input["results"] },
+      payload: { deliveryID: input["deliveryID"], results: input["results"] },
     }).pipe(Effect.mapError(mapClientError)),
   )
 

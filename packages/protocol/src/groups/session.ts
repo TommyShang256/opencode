@@ -360,6 +360,10 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       HttpApiEndpoint.post("session.clientToolResults", "/api/session/:sessionID/client-tool-results", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({
+          deliveryID: Schema.String.pipe(Schema.optional).annotate({
+            description:
+              "Optional opaque delivery correlation ID (1-128 ASCII letters, digits, underscore or hyphen). Persisted with accepted tool results; not permission or an automatic retry key.",
+          }),
           results: Schema.NonEmptyArray(
             Schema.Union([
               Schema.Struct({
@@ -383,7 +387,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           OpenApi.annotations({
             identifier: "v2.session.clientToolResults",
             summary: "Submit client tool results",
-            description: "Complete waiting client-owned native tool calls and resume session execution.",
+            description:
+              "Complete waiting client-owned native tool calls and resume session execution. Accepted results expose deliveryID as state.metadata.clientToolDeliveryID for acknowledgment reconciliation.",
           }),
         ),
     )

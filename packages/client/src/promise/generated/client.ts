@@ -681,7 +681,7 @@ export function make(options: ClientOptions) {
           {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/client-tool-results`,
-            body: { results: input["results"] },
+            body: { deliveryID: input["deliveryID"], results: input["results"] },
             successStatus: 204,
             declaredStatuses: [409, 404, 400, 401],
             empty: true,
