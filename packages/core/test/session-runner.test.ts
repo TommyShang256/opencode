@@ -1993,16 +1993,28 @@ describe("SessionRunnerLLM", () => {
     expect(yield* entries.list(sessionID)).toEqual([{ key: "nullable", value: null }])
   })
 
-  scenario("rejects API instruction entries larger than 8KB", function* () {
+  scenario("retains large structured API instructions without truncating model context", function* (s) {
     const entries = yield* InstructionEntry.Service
+    const value = { instructions: "业务规则\n".repeat(2048), identity: "analysis" }
+    yield* entries.put({ sessionID, key: "behavior", value })
+    yield* s.runPrompt("First")
+    expect(yield* entries.list(sessionID)).toEqual([{ key: "behavior", value }])
+    expect(s.requests[0]?.system.map((part) => part.text).join("\n")).toContain(JSON.stringify(value, null, 2))
+  })
+
+  scenario("rejects API instruction entries larger than the bounded JSON byte limit", function* () {
+    const entries = yield* InstructionEntry.Service
+    const accepted = "x".repeat(262142)
+    yield* entries.put({ sessionID, key: "boundary", value: accepted })
+    expect(yield* entries.list(sessionID)).toEqual([{ key: "boundary", value: accepted }])
 
     const exit = yield* entries
-      .put({ sessionID, key: "oversized", value: "x".repeat(InstructionEntry.MaxValueBytes) })
+      .put({ sessionID, key: "boundary", value: "x".repeat(262143) })
       .pipe(Effect.exit)
 
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(InstructionEntry.ValueTooLargeError)
-    expect(yield* entries.list(sessionID)).toEqual([])
+    expect(yield* entries.list(sessionID)).toEqual([{ key: "boundary", value: accepted }])
   })
 
   scenario("keeps initial instructions and chronological updates after a model switch", function* (s) {
