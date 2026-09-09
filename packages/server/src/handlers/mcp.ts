@@ -14,6 +14,11 @@ import { Cause, Effect, SynchronizedRef } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { response } from "../location"
+import { pluginReadiness } from "./plugin-readiness"
+
+const flushPlugins = pluginReadiness(
+  () => new ServiceUnavailableError({ message: "MCP catalog initialization timed out", service: "mcp.catalog" }),
+)
 
 const allowedCallersMetaKey = "com.huawei.ryoma.dataagent/allowed-callers"
 
@@ -27,6 +32,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
       .handle(
         "mcp.list",
         Effect.fn(function* () {
+          yield* flushPlugins
           const service = yield* Mcp.Service
           return yield* response(
             service
@@ -74,6 +80,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
       .handle(
         "mcp.tools.list",
         Effect.fn(function* (ctx) {
+          yield* flushPlugins
           const service = yield* Mcp.Service
           const servers = yield* service.servers()
           if (!servers.some((server) => server.name === ctx.params.server)) {
