@@ -119,6 +119,17 @@ not an authorization token or proof that the execution is still active. Keep
 external bridge authorization and expiry checks at the bridge itself. No IDs
 are automatically injected into the child environment or persisted by this hook.
 
+Core separately issues an opaque `OPENCODE_TOOL_CONTEXT` reference for a native
+shell child process. `ShellContext.Service` can resolve it only while the shell's
+scope is alive; normal completion revokes it before notifying waiters, and scope
+cleanup also revokes it on spawn failure or cancellation. Direct shell API calls
+clear this environment variable rather than inheriting another execution's
+reference. References are process-local, not durable session credentials, and
+must not be logged, included in model prompts or copied into metadata. Possession
+alone is not tool authorization: bridge consumers must still enforce their caller
+policy and current session/run state. The MCP HTTP bridge does not yet consume
+these references.
+
 An `execute.before` hook can call `ctx.tool.reject(message)` to reject an operation
 before tool side effects. This throws the existing typed `Tool.Error`; the Promise
 adapter preserves that expected failure, including in async hooks. Use a safe,
