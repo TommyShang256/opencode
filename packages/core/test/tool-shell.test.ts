@@ -1,5 +1,6 @@
 import fs from "fs/promises"
 import { realpathSync, watch } from "node:fs"
+import { createServer } from "node:http"
 import os from "os"
 import path from "path"
 import { describe, expect } from "bun:test"
@@ -1004,6 +1005,51 @@ describe("ShellTool", () => {
   )
 
   if (!isWindows) {
+    it.live("workspace-only shell mounts only its scoped socket and read-only client", () =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const previous = process.env.OPENCODE_WORKSPACE_ONLY
+          process.env.OPENCODE_WORKSPACE_ONLY = "true"
+          return previous
+        }),
+        () => Effect.acquireUseRelease(Effect.promise(() => tmpdir("shell-bridge-")), tmp => {
+          reset()
+          return Effect.gen(function* () {
+            const workspace = path.join(tmp.path, "workspace")
+            const client = path.join(tmp.path, "bridge-probe")
+            const socket = path.join(tmp.path, "bridge.sock")
+            const outside = path.join(tmp.path, "outside.txt")
+            yield* Effect.promise(async () => {
+              await fs.mkdir(workspace)
+              await fs.writeFile(outside, "outside workspace")
+              await fs.writeFile(client, `#!/usr/bin/python3\nimport os, socket\nassert not os.path.exists(${JSON.stringify(outside)})\ns = socket.socket(socket.AF_UNIX)\ns.connect(os.environ["OPENCODE_TOOL_BRIDGE_SOCKET"])\ns.sendall(b"GET /probe HTTP/1.0\\r\\n\\r\\n")\ndata = b""\nwhile True:\n chunk = s.recv(4096)\n if not chunk: break\n data += chunk\ns.close()\nprint(data.split(b"\\r\\n\\r\\n", 1)[1].decode())\n`, { mode: 0o700 })
+            })
+            const server = createServer((_, response) => { response.end("bridge-ok") })
+            yield* Effect.acquireRelease(Effect.promise(() => new Promise<void>((resolve, reject) => {
+              server.once("error", reject)
+              server.listen(socket, resolve)
+            })), () => Effect.promise(() => new Promise<void>(resolve => { server.close(() => resolve()); server.closeAllConnections() })))
+            yield* withSession(workspace, registry => Effect.gen(function* () {
+              const contexts = yield* ShellContext.Service
+              let closed = false
+              yield* contexts.installBridge(async () => ({ socket, clients: [client], close: async () => { closed = true } }))
+              const settled = yield* executeTool(registry, call({
+                command: 'if printf changed >> /run/opencode/bin/bridge-probe 2>/dev/null; then exit 12; fi; bridge-probe',
+              }, "call-sandbox-bridge"))
+              expect(settled.status).toBe("completed")
+              expect(settled.metadata?.exit).toBe(0)
+              expect(settled.content?.[0]?.type === "text" && settled.content[0].text).toContain("bridge-ok")
+              expect(closed).toBe(true)
+            }))
+          }).pipe(Effect.scoped)
+        }, tmp => Effect.promise(() => tmp[Symbol.asyncDispose]())),
+        previous => Effect.sync(() => {
+          if (previous === undefined) delete process.env.OPENCODE_WORKSPACE_ONLY
+          else process.env.OPENCODE_WORKSPACE_ONLY = previous
+        }),
+      ), { timeout: 15_000 },
+    )
+
     productionIt.live(
       "workspace-only shell does not inherit server secrets",
       () =>
@@ -1550,6 +1596,24 @@ describe("ShellTool", () => {
   )
 
   it.live(
+    "bridge startup failure rejects Shell creation without launching the command",
+    () => Effect.acquireUseRelease(Effect.promise(() => tmpdir()), tmp => {
+      reset()
+      return withSession(tmp.path, () => Effect.gen(function* () {
+        const contexts = yield* ShellContext.Service
+        const shell = yield* Shell.Service
+        yield* contexts.installBridge(async () => { throw new Error("fixture-private-detail") })
+        const result = yield* shell.create({ command: helloCommand, timeout: 1000 }, undefined,
+          { sessionID, ...toolIdentity, executionID: "call-unavailable-bridge" }).pipe(Effect.exit)
+        expect(Exit.isFailure(result)).toBe(true)
+        if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).not.toContain("fixture-private-detail")
+        expect(yield* shell.list()).toEqual([])
+      }))
+    }, tmp => Effect.promise(() => tmp[Symbol.asyncDispose]())),
+    { timeout: 5000 },
+  )
+
+  it.live(
     "revokes a shell context before publishing completion and never inherits a reference",
     () => Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
@@ -1559,13 +1623,18 @@ describe("ShellTool", () => {
           const shell = yield* Shell.Service
           const contexts = yield* ShellContext.Service
           const hooks = yield* PluginHooks.Service
+          const closed: string[] = []
+          yield* contexts.installBridge(async input => ({ socket: `/tmp/bridge-${input.reference}`, clients: [],
+            close: async () => { closed.push(input.reference) },
+          }))
           yield* hooks.register("shell", "create.before", invocation => Effect.sync(() => {
             invocation.env.OPENCODE_TOOL_CONTEXT = "unissued-parent-reference"
+            invocation.env.OPENCODE_TOOL_BRIDGE_SOCKET = "unissued-parent-socket"
           }))
           const identity = { sessionID, ...toolIdentity, executionID: "call-scoped-shell" }
           const command = isWindows
-            ? '[Console]::Out.Write($env:OPENCODE_TOOL_CONTEXT); Start-Sleep -Seconds 2'
-            : 'printf %s "$OPENCODE_TOOL_CONTEXT"; sleep 2'
+            ? 'if ($env:OPENCODE_TOOL_BRIDGE_SOCKET -ne "/tmp/bridge-$env:OPENCODE_TOOL_CONTEXT") { exit 12 }; [Console]::Out.Write($env:OPENCODE_TOOL_CONTEXT); Start-Sleep -Seconds 2'
+            : '[ "$OPENCODE_TOOL_BRIDGE_SOCKET" = "/tmp/bridge-$OPENCODE_TOOL_CONTEXT" ] || exit 12; printf %s "$OPENCODE_TOOL_CONTEXT"; sleep 2'
           const started = yield* shell.create({ command, timeout: 5000 }, undefined, identity)
           let reference = ""
           for (let attempt = 0; attempt < 100 && !reference; attempt++) {
@@ -1576,8 +1645,10 @@ describe("ShellTool", () => {
           expect(yield* contexts.resolve(reference)).toEqual(identity)
           yield* shell.wait(started.id)
           expect(yield* contexts.resolve(reference)).toBeUndefined()
+          expect(closed).toEqual([reference])
           const direct = yield* shell.create({
-            command: isWindows ? '[Console]::Out.Write($env:OPENCODE_TOOL_CONTEXT)' : 'printf %s "$OPENCODE_TOOL_CONTEXT"',
+            command: isWindows ? '[Console]::Out.Write("$env:OPENCODE_TOOL_CONTEXT$env:OPENCODE_TOOL_BRIDGE_SOCKET")'
+              : 'printf %s "$OPENCODE_TOOL_CONTEXT$OPENCODE_TOOL_BRIDGE_SOCKET"',
             timeout: 5000,
           })
           yield* shell.wait(direct.id)
@@ -1591,6 +1662,7 @@ describe("ShellTool", () => {
           expect((yield* contexts.resolve(removedReference))?.executionID).toBe(identity.executionID)
           yield* shell.remove(removed.id)
           expect(yield* contexts.resolve(removedReference)).toBeUndefined()
+          expect(closed).toEqual([reference, removedReference])
         }))
       },
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),

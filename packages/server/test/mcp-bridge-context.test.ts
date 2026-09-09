@@ -9,6 +9,9 @@ import { Tool } from "@opencode-ai/schema/tool"
 import { it } from "../../core/test/lib/effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { ServerFetch } from "../src/fetch"
+import { McpSocket } from "../src/mcp-socket"
+import { request } from "node:http"
+import { stat } from "node:fs/promises"
 
 it.live("binds MCP bridge calls to issued scope and applies final policy before side effects", () =>
   Effect.gen(function* () {
@@ -80,6 +83,29 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     expect(invoked).toEqual([{ server: "catalog", name: "lookup", args: {}, sessionID: identity.sessionID,
       scriptContext: { reference, directory: expect.any(String) },
     }])
+    yield* McpSocket.install(contexts, handler)
+    const connection = yield* contexts.connect(reference, { directory: invoked[0]!.scriptContext!.directory })
+      .pipe(Scope.provide(scope))
+    expect(connection).toBeDefined()
+    const socketRequest = (route: string, method = "GET") => Effect.promise(() => new Promise<{ status: number; body: string }>((resolve, reject) => {
+      const call = request({ socketPath: connection!.socket, path: route, method, headers: {
+        "x-opencode-tool-context": reference, "content-type": "application/json", "x-opencode-directory": "/foreign",
+      } }, response => {
+        const chunks: Buffer[] = []
+        response.on("data", chunk => chunks.push(chunk))
+        response.on("end", () => resolve({ status: response.statusCode!, body: Buffer.concat(chunks).toString() }))
+      })
+      call.on("error", reject)
+      call.end(method === "POST" ? '{"arguments":{}}' : undefined)
+    }))
+    const socketCatalog = yield* socketRequest("/api/mcp/catalog/tools")
+    expect(socketCatalog.status).toBe(200)
+    expect(JSON.parse(socketCatalog.body).data.map((tool: { name: string }) => tool.name)).toEqual(["lookup"])
+    const socketDenied = yield* socketRequest("/api/mcp/catalog/tool/private/call", "POST")
+    expect(socketDenied.status).toBe(403)
+    expect(socketDenied.body).not.toContain("fixture-private-detail")
+    expect((yield* socketRequest("/api/mcp/catalog/tool/lookup/call", "POST")).status).toBe(200)
+    expect(invoked[1]).toEqual(invoked[0])
     const foreign = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("bridge-foreign-location-")))
     const foreignContext = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/mcp/bridge/context", {
       headers: { "x-opencode-tool-context": reference, "x-opencode-directory": encodeURIComponent(foreign.path) },
@@ -107,6 +133,7 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     expect((yield* catalog("/api/mcp")).status).toBe(403)
     expect((yield* catalog("/api/mcp/catalog/tools")).status).toBe(403)
     expect((yield* catalog("/api/mcp/bridge/context")).status).toBe(403)
-    expect(invoked).toHaveLength(1)
+    expect(invoked).toHaveLength(2)
+    expect(yield* Effect.promise(() => stat(connection!.socket).then(() => true, () => false))).toBe(false)
   }).pipe(Effect.provide(AppNodeBuilder.build(LayerNode.group([ShellContext.node, PluginHooks.node]))), Effect.scoped),
 )

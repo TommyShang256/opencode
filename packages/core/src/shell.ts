@@ -274,7 +274,6 @@ const layer = () =>
 
         const id = Shell.ID.ascending()
         const args = ShellSelect.args(invocation.shell, invocation.command)
-        const sandbox = sandboxCommand(invocation, args, location.directory)
         const file = path.join(outputDir, `${id}.out`)
 
         const info: Info = {
@@ -299,11 +298,18 @@ const layer = () =>
               yield* Effect.addFinalizer(() => Scope.close(contextScope, Exit.void))
               const reference = toolContext === undefined ? undefined
                 : yield* shellContexts.acquire(toolContext).pipe(Scope.provide(contextScope))
+              const connection = reference === undefined ? undefined
+                : yield* shellContexts.connect(reference, location).pipe(
+                  Scope.provide(contextScope),
+                  Effect.mapError((cause) => new AppProcess.AppProcessError({ command: invocation.command, cause })),
+                )
+              const sandbox = sandboxCommand(invocation, args, location.directory, connection)
               const handle = yield* environment.spawner
                 .spawn(
                   ChildProcess.make(sandbox.executable, sandbox.args, {
                     cwd: sandbox.cwd,
                     env: { ...sandbox.env, OPENCODE_TOOL_CONTEXT: reference,
+                      OPENCODE_TOOL_BRIDGE_SOCKET: sandbox.bridgeSocket,
                       OPENCODE_TOOL_DIRECTORY: toolContext ? location.directory : undefined,
                       OPENCODE_TOOL_WORKSPACE: toolContext ? location.workspaceID : undefined },
                     stdin: "ignore",
@@ -479,9 +485,12 @@ function shellEnvironment(session: SessionEnvironment.Variables | undefined, dir
   }
 }
 
-function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory: string) {
+function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory: string, connection?: ShellContext.Connection) {
   if (process.env.OPENCODE_WORKSPACE_ONLY !== "true") {
-    return { executable: invocation.shell, args, cwd: invocation.cwd, env: invocation.env }
+    return { executable: invocation.shell, args, cwd: invocation.cwd, bridgeSocket: connection?.socket,
+      env: { ...invocation.env, ...(connection?.clients.length ? {
+        PATH: [...connection.clients.map(client => path.dirname(client)), invocation.env.PATH ?? ""].join(path.delimiter),
+      } : {}) } }
   }
   const parents = path
     .resolve(directory)
@@ -539,6 +548,11 @@ function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory
       "--bind",
       directory,
       directory,
+      ...(connection ? [
+        "--dir", "/run/opencode", "--dir", "/run/opencode/bin",
+        "--ro-bind", connection.socket, "/run/opencode/bridge.sock",
+        ...connection.clients.flatMap(client => ["--ro-bind", client, `/run/opencode/bin/${path.basename(client)}`]),
+      ] : []),
       "--chdir",
       invocation.cwd,
       "--",
@@ -546,6 +560,9 @@ function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory
       ...args,
     ],
     cwd: directory,
-    env: shellEnvironment(invocation.env, directory),
+    bridgeSocket: connection ? "/run/opencode/bridge.sock" : undefined,
+    env: shellEnvironment({ ...invocation.env, ...(connection ? {
+      PATH: `/run/opencode/bin:${invocation.env.PATH ?? "/usr/bin:/bin"}`,
+    } : {}) }, directory),
   }
 }
