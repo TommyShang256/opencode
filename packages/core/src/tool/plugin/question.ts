@@ -22,6 +22,7 @@ Usage notes:
 
 export const Input = Schema.Struct({
   questions: Schema.Array(Question.Prompt).check(Schema.isNonEmpty()).annotate({ description: "Questions to ask" }),
+  metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
 })
 
 export const Output = Schema.Struct({
@@ -76,6 +77,7 @@ export const Plugin = {
                       sessionID: context.sessionID,
                       title: "Questions",
                       metadata: {
+                        ...(input.metadata ?? {}),
                         kind: "question",
                         tool: { messageID: context.messageID, id: context.id },
                       },

@@ -161,7 +161,10 @@ describe("QuestionTool", () => {
         yield* executeTool(registry, {
           sessionID,
           ...toolIdentity,
-          call: { type: "tool-call", id: "call-question", name: "question", input: { questions } },
+          call: { type: "tool-call", id: "call-question", name: "question", input: {
+            questions,
+            metadata: { dataagent: { interactionType: "artifact_decision", applicationPath: "data-applications/orders", stage: "specification" } },
+          } },
         }),
       ).toEqual({
         status: "completed",
@@ -178,7 +181,10 @@ describe("QuestionTool", () => {
       expect(capturedInput()).toEqual({
         sessionID,
         title: "Questions",
-        metadata: { kind: "question", tool: { messageID: toolIdentity.messageID, id: "call-question" } },
+        metadata: {
+          kind: "question", tool: { messageID: toolIdentity.messageID, id: "call-question" },
+          dataagent: { interactionType: "artifact_decision", applicationPath: "data-applications/orders", stage: "specification" },
+        },
         fields: [
           {
             key: "q0",
