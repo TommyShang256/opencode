@@ -91,16 +91,25 @@ const layer = Layer.effect(
     const trigger: Interface["trigger"] = Effect.fnUntraced(function* (domain, name, event) {
       for (const entry of callbacks.get(key(domain, name)) ?? []) {
         if (entry.options?.providerID !== undefined && entry.options.providerID !== eventProviderID(event)) continue
+        const authorization = domain === "mcp" && name === "bridge.authorize" ? event as MCPHooks["bridge.authorize"] : undefined
+        const authorizationView: MCPHooks["bridge.authorize"] | undefined = authorization
+          ? { ...structuredClone(authorization), decision: "defer" } : undefined
         const catalog = domain === "mcp" && name === "bridge.catalog" ? event as MCPHooks["bridge.catalog"] : undefined
         const catalogView = catalog ? structuredClone(catalog) : undefined
         const result: Effect.Effect<void, Failures[typeof domain][typeof name]> = Reflect.apply(
           entry.callback,
           undefined,
           // Final validators cannot rewrite the actual invocation or another validator's view.
-          [catalogView ?? ((domain === "tool" && name === "execute.validate") || (domain === "mcp" && name === "bridge.validate")
+          [authorizationView ?? catalogView ?? ((domain === "tool" && name === "execute.validate") || (domain === "mcp" && name === "bridge.validate")
             ? structuredClone(event) : event)],
         )
         yield* result
+        if (authorization && authorizationView) {
+          // Every policy sees an independent request. Any denial wins, regardless of order.
+          const decision: MCPHooks["bridge.authorize"]["decision"] = authorizationView.decision
+          if (decision === "deny" || authorization.decision === "deny") authorization.decision = "deny"
+          else if (decision === "allow") authorization.decision = "allow"
+        }
         if (catalog && catalogView) {
           const allowed = new Set(catalogView.tools.map(tool => JSON.stringify([tool.server, tool.name])))
           catalog.tools = catalog.tools.filter(tool => allowed.has(JSON.stringify([tool.server, tool.name])))

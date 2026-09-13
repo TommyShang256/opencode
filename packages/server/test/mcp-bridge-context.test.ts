@@ -22,13 +22,19 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
       servers: () => Effect.succeed(["catalog", "empty"].map(name => new Mcp.ServerInfo({ name: Mcp.ServerName.make(name), status: { status: "connected" } }))),
       tools: () => Effect.succeed(["lookup", "private", "model-only"].map(name => new Mcp.Tool({
         server: Mcp.ServerName.make("catalog"), name,
-        meta: { "com.huawei.ryoma.dataagent/allowed-callers": [name === "model-only" ? "agent" : "script"] },
+        meta: { "fixture/callers": [name === "model-only" ? "agent" : "script"] },
       }))),
       callTool: input => {
         invoked.push(input)
         return Effect.succeed({ server: input.server, tool: input.name, isError: false, content: [] })
       },
     })
+    const authorize = yield* hooks.register("mcp", "bridge.authorize", event => Effect.sync(() => {
+      event.decision = event.meta?.["fixture/callers"] instanceof Array
+        && event.meta["fixture/callers"].includes("script") ? "allow" : "deny"
+      // Authorization cannot change the target or arguments sent to the provider.
+      Object.assign(event, { tool: "private", input: { forged: true } })
+    }))
     yield* hooks.register("mcp", "bridge.validate", event => {
       if (!event.toolContext || event.tool === "private") return Effect.fail(new Tool.Error({ message: "fixture-private-detail" }))
       // Validators receive detached views; rewriting the event must not redirect execution.
@@ -37,7 +43,7 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     })
     const handler = yield* ServerFetch.make({
       app: { version: "test" }, database: { path: ":memory:" },
-      config: { project: false }, models: { fetch: false }, fs: { filewatcher: false },
+      config: { project: false, content: JSON.stringify({ permissions: [{ action: "*", resource: "*", effect: "deny" }] }) }, models: { fetch: false }, fs: { filewatcher: false },
     }, { overrides: [
       Mcp.node.replace(mcp), ShellContext.node.replace(Layer.succeed(ShellContext.Service, contexts)),
       PluginHooks.node.replace(Layer.succeed(PluginHooks.Service, hooks)),
@@ -124,6 +130,15 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     expect(privateError).toContain("MCP_BRIDGE_CALL_DENIED")
     expect(privateError).not.toContain("fixture-private-detail")
     expect((yield* call("lookup", {}, false)).status).toBe(403)
+    expect((yield* call("model-only")).status).toBe(403)
+    // A deny from another installed policy wins over an explicit grant.
+    const veto = yield* hooks.register("mcp", "bridge.authorize", event => Effect.sync(() => { event.decision = "deny" }))
+    expect((yield* call()).status).toBe(403)
+    yield* veto.dispose
+    yield* authorize.dispose
+    // Metadata alone grants nothing: without an authorizer the ordinary Agent policy denies.
+    expect((yield* call()).status).toBe(403)
+    yield* hooks.register("mcp", "bridge.authorize", event => Effect.sync(() => { event.decision = "allow" }))
     // Expiry during validation must still stop the subsequent remote side effect.
     yield* hooks.register("mcp", "bridge.validate", () => Scope.close(scope, Exit.void))
     const stale = yield* call()

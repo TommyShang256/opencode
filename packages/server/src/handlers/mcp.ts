@@ -23,7 +23,6 @@ const flushPlugins = pluginReadiness(
   () => new ServiceUnavailableError({ message: "MCP catalog initialization timed out", service: "mcp.catalog" }),
 )
 
-const allowedCallersMetaKey = "com.huawei.ryoma.dataagent/allowed-callers"
 
 const notFound = <A, R>(effect: Effect.Effect<A, Mcp.NotFoundError, R>) =>
   effect.pipe(Effect.mapError((error) => new McpServerNotFoundError({ server: error.server, message: error.message })))
@@ -127,20 +126,16 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           const tool = (yield* service.tools()).find(
             (candidate) => candidate.server === ctx.params.server && candidate.name === ctx.params.tool,
           )
-          const declaredCallers = toolCallers(tool)
-
-          // DataAgent publishes the caller contract with each tool. A bridge
-          // request represents SCRIPT, so an explicit contract is authoritative
-          // and must not inherit a model Agent's tool allowlist.
-          if (declaredCallers && !declaredCallers.includes("script")) {
-            return yield* new PermissionDeniedError({
-              message: `MCP tool is not available to script callers: ${ctx.params.server}/${ctx.params.tool}`,
-              permission: McpTool.name(ctx.params.server, ctx.params.tool),
-            })
-          }
-
           const action = McpTool.name(ctx.params.server, ctx.params.tool)
           const hooks = yield* PluginHooks.Service
+          const authorization = yield* hooks.trigger("mcp", "bridge.authorize", {
+            server: ctx.params.server, tool: ctx.params.tool, input: ctx.payload.arguments,
+            meta: tool?.meta, toolContext, decision: "defer",
+          }).pipe(Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: action })))
+          if (authorization.decision === "deny") {
+            return yield* new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: action })
+          }
+
           yield* hooks.trigger("mcp", "bridge.validate", {
             server: ctx.params.server, tool: ctx.params.tool, input: ctx.payload.arguments, toolContext,
           }).pipe(Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: action })))
@@ -148,7 +143,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           // Agent state loads asynchronously at startup; permission rules resolve
           // via agents, and an unloaded registry fails CLOSED (deny-all). Wait
           // briefly for it so early bridge calls aren't spuriously denied.
-          if (!declaredCallers) {
+          if (authorization.decision !== "allow") {
             for (let i = 0; i < 25; i++) {
               if ((yield* agents.list()).length > 0) break
               yield* Effect.sleep("200 millis")
@@ -179,7 +174,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
 
           // Keep this request alive while the standard permission endpoint resolves it,
           // so both "once" and "always" have the same meaning as an LLM-owned tool call.
-          if (!declaredCallers) {
+          if (authorization.decision !== "allow") {
             yield* permission
               .assert({
                 action,
@@ -278,17 +273,11 @@ const assertBridgeLive = Effect.fn(function* (scope: BridgeScope) {
 
 const scopedCatalog = Effect.fn(function* (tools: Mcp.Tool[], scope: BridgeScope) {
   if (scope.reference === undefined) return tools // Explicit administrative inventory, not a script permission grant.
-  const candidates = tools.filter(tool => toolCallers(tool)?.includes("script") ?? true)
   const hooks = yield* PluginHooks.Service
   const event = yield* hooks.trigger("mcp", "bridge.catalog", {
-    toolContext: scope.toolContext, tools: candidates.map(tool => ({ server: String(tool.server), name: tool.name })),
+    toolContext: scope.toolContext, tools: tools.map(tool => ({ server: String(tool.server), name: tool.name, meta: tool.meta })),
   }).pipe(Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: "mcp.bridge" })))
   yield* assertBridgeLive(scope)
   const visible = new Set(event.tools.map(tool => JSON.stringify([tool.server, tool.name])))
-  return candidates.filter(tool => visible.has(JSON.stringify([tool.server, tool.name])))
+  return tools.filter(tool => visible.has(JSON.stringify([tool.server, tool.name])))
 })
-
-function toolCallers(tool: Mcp.Tool | undefined) {
-  const value = tool?.meta?.[allowedCallersMetaKey]
-  return Array.isArray(value) && value.every((caller): caller is string => typeof caller === "string") ? value : undefined
-}
