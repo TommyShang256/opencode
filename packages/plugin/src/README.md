@@ -160,18 +160,26 @@ must be trusted to handle it without logging or persisting it. Receivers must
 resolve it through the authenticated runtime and recheck product authorization;
 the metadata itself is not proof. It never enters business tool arguments.
 
+`ctx.mcp.hook("bridge.authorize", callback)` receives a detached target, arguments,
+opaque tool `meta`, and resolved `toolContext`. Each hook starts with `decision: "defer"`.
+A trusted plugin may explicitly `allow` using its caller policy, or `deny`; any denial
+wins regardless of hook order. All-defer (including no plugins) uses the standard Agent
+permission flow. Tool metadata alone never grants permission. Edits other than `decision`
+are discarded, and final validators plus the live reference check still run before effects.
+This is an installed policy extension, not a client request field or a Project authorization grant.
+
 `ctx.mcp.hook("bridge.validate", callback)` receives a detached view of the target,
 arguments and optional resolved `toolContext`. Product plugins may reject through
 `ctx.tool.reject`; the bridge returns a sanitized `MCP_BRIDGE_CALL_DENIED` rather
 than exposing that plugin error. The validator runs before permission prompts or
 fallback bridge-session creation. No reference means no native tool identity;
-plugins requiring scoped execution must reject that case. Existing caller and
-permission checks remain in place. This hook does not prove product Run/Project
+plugins requiring scoped execution must reject that case. The standard permission check remains the default. This hook does not prove product Run/Project
 authorization; that remains a separate responsibility.
 
 Scoped server/tool catalog reads use the same reference and Location checks.
 `ctx.mcp.hook("bridge.catalog", callback)` receives resolved `toolContext` and a
-mutable list of `{ server, name }` identities after script-caller filtering.
+mutable list of `{ server, name, meta? }` identities. Metadata is opaque to the runtime;
+product plugins own caller interpretation and filtering.
 Each callback can only narrow the previous list: additions cannot restore tools
 removed by another callback. Reference liveness is checked again after hooks.
 Expired or mismatched references return 403, not an unscoped catalog fallback.

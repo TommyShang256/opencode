@@ -5,9 +5,17 @@ import type { Hooks } from "./registration.js"
 import type { ShellCreateBefore } from "./shell.js"
 
 export interface MCPHooks {
+  readonly "bridge.authorize": {
+    readonly server: string
+    readonly tool: string
+    readonly input: Record<string, unknown>
+    readonly meta?: Readonly<Record<string, unknown>>
+    readonly toolContext?: ShellCreateBefore["toolContext"]
+    decision: "defer" | "allow" | "deny"
+  }
   readonly "bridge.catalog": {
     readonly toolContext?: ShellCreateBefore["toolContext"]
-    tools: Array<{ readonly server: string; readonly name: string }>
+    tools: Array<{ readonly server: string; readonly name: string; readonly meta?: Readonly<Record<string, unknown>> }>
   }
   readonly "bridge.validate": {
     readonly server: string

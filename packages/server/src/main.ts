@@ -34,7 +34,7 @@ const program = Effect.scoped(
   Effect.gen(function* () {
     const server = yield* start({
       app: {
-        name: process.env.OPENCODE_CLIENT ?? process.env.OPENCODE_APP_NAME ?? "dataagent-server",
+        name: process.env.OPENCODE_CLIENT ?? process.env.OPENCODE_APP_NAME ?? "opencode-server",
         version: OPENCODE_VERSION,
         channel: OPENCODE_CHANNEL,
       },

@@ -55,6 +55,27 @@ describe("fromPromise", () => {
     yield* call("allowed")
   }))
 
+  for (const decisions of [["allow", "deny"], ["deny", "allow"]] as const) {
+    it.effect(`combines bridge policies without mutation or order-dependent grants: ${decisions}`, () => Effect.gen(function* () {
+      const plugins = yield* Plugin.Service
+      const hooks = yield* PluginHooks.Service
+      const host = yield* PluginHost.make(plugins)
+      for (const decision of decisions) yield* PluginPromise.fromPromise(define({ id: `bridge-${decision}`, setup: async ctx => {
+        await ctx.mcp.hook("bridge.authorize", async event => {
+          expect(event.decision).toBe("defer")
+          expect(event.tool).toBe("lookup")
+          expect(event.input).toEqual({ query: "original" })
+          event.decision = decision
+          Object.assign(event, { tool: "foreign", input: {} })
+        })
+      } })).effect(host)
+      const result = yield* hooks.trigger("mcp", "bridge.authorize", {
+        server: "fixture", tool: "lookup", input: { query: "original" }, decision: "defer",
+      })
+      expect(result).toEqual({ server: "fixture", tool: "lookup", input: { query: "original" }, decision: "deny" })
+    }))
+  }
+
   for (const phase of ["execute.before", "execute.validate"] as const) it.effect(`preserves explicit Promise tool rejection in ${phase}`, () =>
     Effect.gen(function* () {
       const plugins = yield* Plugin.Service
