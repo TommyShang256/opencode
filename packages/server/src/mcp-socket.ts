@@ -87,8 +87,18 @@ export async function open(options: Options) {
       const body = Buffer.concat(chunks).toString("utf8")
       if (incoming.method === "POST") {
         const parsed: unknown = JSON.parse(body)
-        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)
-          || Object.keys(parsed).length !== 1 || !("arguments" in parsed)
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          failure(400)
+          return
+        }
+        const keys = Object.keys(parsed)
+        // A socket owns the Shell identity. Supplying either identity field is a
+        // rejected scope forgery, while other malformed request shapes remain 400.
+        if (keys.some(key => key === "sessionId" || key === "agent")) {
+          failure(403)
+          return
+        }
+        if (keys.length !== 1 || !("arguments" in parsed)
           || !parsed.arguments || typeof parsed.arguments !== "object" || Array.isArray(parsed.arguments)) {
           failure(400)
           return

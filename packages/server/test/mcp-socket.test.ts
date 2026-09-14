@@ -51,7 +51,7 @@ test("socket rejects management routes, foreign references and caller-selected s
     }
     expect((await send(bridge.path, "/api/mcp", "GET", undefined, "foreign-reference")).status).toBe(403)
     expect((await send(bridge.path, "/api/mcp/catalog/tool/discover/call", "POST",
-      '{"arguments":{},"sessionId":"foreign-session"}')).status).toBe(400)
+      '{"arguments":{},"sessionId":"foreign-session"}')).status).toBe(403)
     expect(calls).toBe(0)
     expect((await send(bridge.path, "/api/mcp")).status).toBe(200)
     live = false
