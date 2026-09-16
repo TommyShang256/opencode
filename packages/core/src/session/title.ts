@@ -46,7 +46,9 @@ export const cleanMessageText = (raw: string): string => {
     .replace(/<thinking[\s\S]*?(?:<\/thinking>|$)/gi, "")
     .replace(/<thought[\s\S]*?(?:<\/thought>|$)/gi, "")
     .replace(/<system[\s\S]*?(?:<\/system>|$)/gi, "")
-    .replace(/<\/?(?:tool_call|tool_response|tool_result|tool|thinking|thought|system)>/gi, "")
+    .replace(/<environment[\s\S]*?(?:<\/environment>|$)/gi, "")
+    .replace(/<attachments[\s\S]*?(?:<\/attachments>|$)/gi, "")
+    .replace(/<\/?(?:tool_call|tool_response|tool_result|tool|thinking|thought|system|environment|user_message|attachments)>/gi, "")
 
   cleaned = cleaned.replace(/```(?:json|xml)?[\s\S]*?```/gi, (match) => {
     if (match.includes('"name"') || match.includes('"arguments"') || match.includes("<tool_call")) {
@@ -55,7 +57,14 @@ export const cleanMessageText = (raw: string): string => {
     return match
   })
 
-  cleaned = cleaned.replace(/\{[\s\S]*?"(?:name|arguments)"[\s\S]*?\}/gi, "")
+  cleaned = cleaned
+    .split("\n")
+    .filter((line) => {
+      const trimmed = line.trim()
+      if (trimmed.startsWith("{") && (trimmed.includes('"name"') || trimmed.includes('"arguments"'))) return false
+      return true
+    })
+    .join("\n")
 
   return cleaned
     .split("\n")
@@ -100,7 +109,10 @@ export const cleanTitle = (raw: string | undefined): string | undefined => {
   if (line.startsWith("{") && line.endsWith("}")) {
     return undefined
   }
-  if (line.includes('"name":') || line.includes('"arguments":') || line.includes('"query":')) {
+  if (line.includes('"name":') && line.includes('"arguments":')) {
+    return undefined
+  }
+  if (line.includes('"query":') && /^\s*\{/.test(line)) {
     return undefined
   }
 
@@ -197,7 +209,8 @@ export const layer = Layer.effect(
                 .join("\n\n")
               if (!recent) return original
               const prefix = `${original}\n\nRecent conversation:\n`
-              return `${prefix}${recent.slice(-(MAX_CONTEXT_LENGTH - prefix.length))}`
+              const budget = Math.max(0, MAX_CONTEXT_LENGTH - prefix.length)
+              return `${prefix}${budget > 0 ? recent.slice(-budget) : ""}`
             }),
             Effect.orElseSucceed(() => userQuery),
           )
@@ -209,17 +222,23 @@ export const layer = Layer.effect(
         (selection.primary && !isDeepStrictEqual(selection.selected.ref, selection.primary.ref)
           ? yield* attempt({ session, agent: selection.agent, text, model: selection.primary })
           : undefined)
-      if (!rawTitle) return
-      let title = cleanTitle(rawTitle)
-      if (!title && isUntitled(session)) {
+      let title: string | undefined
+      if (!rawTitle) {
+        if (!isUntitled(session)) return
         const fallback = cleanTitle(userQuery) ?? userQuery.split("\n")[0]?.trim()
         if (fallback) title = truncate(fallback)
+      } else {
+        title = cleanTitle(rawTitle)
+        if (!title && isUntitled(session)) {
+          const fallback = cleanTitle(userQuery) ?? userQuery.split("\n")[0]?.trim()
+          if (fallback) title = truncate(fallback)
+        }
       }
       if (!title) return
       const expectedSequence = (yield* Bus.latestSequence(db, sessionID)) + 1
       const current = yield* store.get(sessionID)
       if (!current || current.title !== session.title || current.title === title) return
-      if (!isUntitled(current) && !cleanTitle(rawTitle)) return
+      if (!isUntitled(current) && rawTitle && !cleanTitle(rawTitle)) return
       yield* bus
         .publish(
           SessionEvent.Renamed,
