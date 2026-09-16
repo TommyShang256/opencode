@@ -1,4 +1,4 @@
-import { beforeEach, expect } from "bun:test"
+import { beforeEach, expect, test } from "bun:test"
 import {
   AIError,
   LLMClient,
@@ -581,3 +581,191 @@ it.effect("preserves a manual rename completed while generation is in flight", (
     expect((yield* store.get(sessionID))?.title).toBe("Manual title")
   }),
 )
+
+it.effect("cleans markdown headers from title generator output", () =>
+  Effect.gen(function* () {
+    yield* enableTitleAgent
+    const sessionID = Session.ID.make("ses_title_markdown_header")
+    yield* insertSession(sessionID)
+    yield* prompt(sessionID, "Setup database connections")
+    titleStream = () =>
+      Stream.make(
+        LLMEvent.textDelta({ id: "title", text: "## Database Connection Setup\n" }),
+        LLMEvent.stepFinish({
+          index: 0,
+          reason: { normalized: "stop" },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 5,
+            nonCachedInputTokens: 10,
+            cacheReadInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            reasoningTokens: 0,
+          },
+        }),
+        LLMEvent.finish({ reason: { normalized: "stop" } }),
+      )
+
+    const title = yield* SessionTitle.Service
+    yield* title.generate(sessionID)
+
+    const store = yield* SessionStore.Service
+    expect((yield* store.get(sessionID))?.title).toBe("Database Connection Setup")
+  }),
+)
+
+it.effect("filters out tool call and thinking content from context passed to title agent", () =>
+  Effect.gen(function* () {
+    yield* enableTitleAgent
+    const sessionID = Session.ID.make("ses_title_filter_tool_calls")
+    yield* insertSession(sessionID, "Initial Title")
+    yield* prompt(sessionID, "查询活跃用户指标定义")
+
+    const events = yield* Bus.Service
+    const assistantMessageID = SessionMessage.ID.create()
+    yield* events.publish(SessionEvent.Step.Started, {
+      sessionID,
+      assistantMessageID,
+      agent: Agent.ID.make("build"),
+      model: Model.Ref.make({ id: Model.ID.make("title-model"), providerID: Provider.ID.make("test") }),
+    })
+    yield* events.publish(SessionEvent.Text.Started, { sessionID, assistantMessageID, ordinal: 0 })
+    yield* events.publish(SessionEvent.Text.Ended, {
+      sessionID,
+      assistantMessageID,
+      ordinal: 0,
+      text: `<thinking>Need to query knowledge base</thinking>\n<tool_call>{"name": "search_knowledge", "arguments": {"query": "活跃用户 定义"}}</tool_call>\n活跃用户是指在统计周期内有登录或使用行为的用户。`,
+    })
+    yield* prompt(sessionID, "请进一步细化为日活口径")
+
+    const title = yield* SessionTitle.Service
+    yield* title.generate(sessionID)
+
+    expect(requests).toHaveLength(1)
+    const promptText = JSON.stringify(requests[0]?.messages)
+    expect(promptText).toContain("活跃用户是指在统计周期内有登录或使用行为的用户。")
+    expect(promptText).not.toContain("<tool_call")
+    expect(promptText).not.toContain("search_knowledge")
+    expect(promptText).not.toContain("<thinking>")
+  }),
+)
+
+it.effect("falls back to user prompt when title agent returns raw tool call for untitled session", () =>
+  Effect.gen(function* () {
+    yield* enableTitleAgent
+    const sessionID = Session.ID.make("ses_title_tool_call_fallback")
+    yield* insertSession(sessionID)
+    yield* prompt(sessionID, "查询活跃用户指标定义")
+
+    titleStream = () =>
+      Stream.make(
+        LLMEvent.textDelta({
+          id: "title",
+          text: '# <tool_call>{"name": "search_knowledge", "arguments": {"query": "活跃用户 定义"}}</tool_call>\n',
+        }),
+        LLMEvent.stepFinish({
+          index: 0,
+          reason: { normalized: "stop" },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 10,
+            nonCachedInputTokens: 10,
+            cacheReadInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            reasoningTokens: 0,
+          },
+        }),
+        LLMEvent.finish({ reason: { normalized: "stop" } }),
+      )
+
+    const title = yield* SessionTitle.Service
+    yield* title.generate(sessionID)
+
+    const store = yield* SessionStore.Service
+    const current = yield* store.get(sessionID)
+    expect(current?.title).toBe("查询活跃用户指标定义")
+  }),
+)
+
+it.effect("preserves existing title when title agent returns raw tool call during regeneration", () =>
+  Effect.gen(function* () {
+    yield* enableTitleAgent
+    const sessionID = Session.ID.make("ses_title_tool_call_preserve_existing")
+    yield* insertSession(sessionID, "Existing Valid Title")
+    yield* prompt(sessionID, "Another message")
+
+    titleStream = () =>
+      Stream.make(
+        LLMEvent.textDelta({
+          id: "title",
+          text: '<tool_call>{"name": "search_knowledge", "arguments": {"query": "test"}}</tool_call>',
+        }),
+        LLMEvent.stepFinish({
+          index: 0,
+          reason: { normalized: "stop" },
+          usage: {
+            inputTokens: 10,
+            outputTokens: 10,
+            nonCachedInputTokens: 10,
+            cacheReadInputTokens: 0,
+            cacheWriteInputTokens: 0,
+            reasoningTokens: 0,
+          },
+        }),
+        LLMEvent.finish({ reason: { normalized: "stop" } }),
+      )
+
+    const title = yield* SessionTitle.Service
+    yield* title.generate(sessionID)
+
+    const store = yield* SessionStore.Service
+    const current = yield* store.get(sessionID)
+    expect(current?.title).toBe("Existing Valid Title")
+  }),
+)
+
+test("cleanTitle rejects invalid tool call content and normalizes valid titles", () => {
+  expect(SessionTitle.cleanTitle('# <tool_call>{"name": "search_knowledge"}</tool_call>')).toBeUndefined()
+  expect(SessionTitle.cleanTitle('<tool_call>{"name": "search_knowledge"}</tool_call>')).toBeUndefined()
+  expect(SessionTitle.cleanTitle('{"name": "search_knowledge", "arguments": {}}')).toBeUndefined()
+  expect(SessionTitle.cleanTitle('<tool_response>result</tool_response>')).toBeUndefined()
+  expect(SessionTitle.cleanTitle("<thinking>internal thoughts</thinking>")).toBeUndefined()
+  expect(SessionTitle.cleanTitle("")).toBeUndefined()
+  expect(SessionTitle.cleanTitle("   ")).toBeUndefined()
+
+  expect(SessionTitle.cleanTitle("# Fix Login Issue")).toBe("Fix Login Issue")
+  expect(SessionTitle.cleanTitle("### \"OAuth Token Refresh\"")).toBe("OAuth Token Refresh")
+  expect(SessionTitle.cleanTitle("- User Registration Flow")).toBe("User Registration Flow")
+  expect(SessionTitle.cleanTitle("活跃用户指标口径定义")).toBe("活跃用户指标口径定义")
+})
+
+test("cleanMessageText strips tool tags, thinking blocks, and tool JSON payloads", () => {
+  const dirty = `
+<thinking>
+Planning next step
+</thinking>
+<tool_call>
+{"name": "search_knowledge", "arguments": {"query": "test"}}
+</tool_call>
+Here is the actual answer for the user.
+`
+  const cleaned = SessionTitle.cleanMessageText(dirty)
+  expect(cleaned).toBe("Here is the actual answer for the user.")
+  expect(cleaned).not.toContain("<thinking>")
+  expect(cleaned).not.toContain("<tool_call>")
+  expect(cleaned).not.toContain("search_knowledge")
+
+  const withCodeBlock = `
+\`\`\`json
+{
+  "name": "search_knowledge",
+  "arguments": {"query": "test"}
+}
+\`\`\`
+Found relevant results.
+`
+  const cleanedCodeBlock = SessionTitle.cleanMessageText(withCodeBlock)
+  expect(cleanedCodeBlock).toBe("Found relevant results.")
+})
+
+

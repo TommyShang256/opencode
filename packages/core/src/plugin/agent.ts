@@ -34,12 +34,15 @@ Your output must be:
 - A single line
 - <=50 characters
 - No explanations
+- NEVER output tool calls, XML tags (<tool_call>, etc.), JSON, or markdown headers (#)
 </task>
 
 <rules>
 - you MUST use the same language as the user message you are summarizing
 - Title must be grammatically correct and read naturally - no word salad
 - Never include tool names in the title (e.g. "read tool", "bash tool", "edit tool")
+- NEVER output tool calls or tool-related markup (such as <tool_call>, </tool_call>, <tool_result>, json code blocks, etc.)
+- NEVER output markdown headings like "# Title" or bullets
 - Focus on the main topic or question the user needs to retrieve
 - Vary your phrasing - avoid repetitive patterns like always starting with "Analyzing"
 - When a file is mentioned, focus on WHAT the user wants to do WITH the file, not just that they shared it
