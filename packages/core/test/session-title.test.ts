@@ -747,8 +747,14 @@ it.effect("preserves existing title when title agent returns raw tool call durin
 )
 
 test("cleanTitle rejects invalid tool call content and normalizes valid titles", () => {
+  const bar = "\uFF5C"
+  const dsml = `<${bar}${bar}DSML${bar}${bar} calls>\n`
+    + `<${bar}${bar}DSML${bar}${bar} invoke name="navigator_read_job">\n`
+    + `</${bar}${bar}DSML${bar}${bar} invoke>\n`
+    + `</${bar}${bar}DSML${bar}${bar} calls>`
   expect(SessionTitle.cleanTitle('# <tool_call>{"name": "search_knowledge"}</tool_call>')).toBeUndefined()
   expect(SessionTitle.cleanTitle('<tool_call>{"name": "search_knowledge"}</tool_call>')).toBeUndefined()
+  expect(SessionTitle.cleanTitle(dsml)).toBeUndefined()
   expect(SessionTitle.cleanTitle('{"name": "search_knowledge", "arguments": {}}')).toBeUndefined()
   expect(SessionTitle.cleanTitle('<tool_response>result</tool_response>')).toBeUndefined()
   expect(SessionTitle.cleanTitle("<thinking>internal thoughts</thinking>")).toBeUndefined()
@@ -762,6 +768,7 @@ test("cleanTitle rejects invalid tool call content and normalizes valid titles",
 })
 
 test("cleanMessageText strips tool tags, thinking blocks, and tool JSON payloads", () => {
+  const bar = "\uFF5C"
   const dirty = `
 <thinking>
 Planning next step
@@ -776,6 +783,12 @@ Here is the actual answer for the user.
   expect(cleaned).not.toContain("<thinking>")
   expect(cleaned).not.toContain("<tool_call>")
   expect(cleaned).not.toContain("search_knowledge")
+
+  const dsml = `<${bar}${bar}DSML${bar}${bar} calls>\n`
+    + `<${bar}${bar}DSML${bar}${bar} invoke name="navigator_read_job">\n`
+    + `</${bar}${bar}DSML${bar}${bar} invoke>\n`
+    + `</${bar}${bar}DSML${bar}${bar} calls>`
+  expect(SessionTitle.cleanMessageText(`Before\n${dsml}\nAfter`)).toBe("Before\nAfter")
 
   const withCodeBlock = `
 \`\`\`json
