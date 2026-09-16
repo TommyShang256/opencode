@@ -531,7 +531,7 @@ it.effect("retries after a failed title request", () =>
   }),
 )
 
-it.effect("does not rename after a failed title stream", () =>
+it.effect("falls back to the user prompt after a failed title stream", () =>
   Effect.gen(function* () {
     yield* enableTitleAgent
     const sessionID = Session.ID.make("ses_title_stream_failure")
@@ -549,7 +549,29 @@ it.effect("does not rename after a failed title stream", () =>
 
     const store = yield* SessionStore.Service
     expect(requests).toHaveLength(1)
-    expect((yield* store.get(sessionID))?.title).toBeUndefined()
+    expect((yield* store.get(sessionID))?.title).toBe("Fail this title stream")
+  }),
+)
+
+it.effect("falls back to the wrapped user message after title generation fails", () =>
+  Effect.gen(function* () {
+    yield* enableTitleAgent
+    const sessionID = Session.ID.make("ses_title_wrapped_failure")
+    yield* insertSession(sessionID)
+    yield* prompt(sessionID, `<environment>
+数据工作目录: /workspace/data
+</environment>
+
+<user_message>
+查询月度销售趋势
+</user_message>`)
+    titleStream = () => Stream.make(LLMEvent.providerError({ message: "Provider unavailable" }))
+
+    const title = yield* SessionTitle.Service
+    yield* title.generate(sessionID)
+
+    const store = yield* SessionStore.Service
+    expect((yield* store.get(sessionID))?.title).toBe("查询月度销售趋势")
   }),
 )
 
@@ -768,4 +790,53 @@ Found relevant results.
   expect(cleanedCodeBlock).toBe("Found relevant results.")
 })
 
+test("cleanMessageText strips environment, user_message and attachments wrapper tags", () => {
+  const wrapped = `<environment>
+数据工作目录: /workspace/data
+项目: demo-project
+</environment>
 
+<user_message>
+查询月度销售趋势
+</user_message>`
+  const cleaned = SessionTitle.cleanMessageText(wrapped)
+  expect(cleaned).toBe("查询月度销售趋势")
+  expect(cleaned).not.toContain("<environment>")
+  expect(cleaned).not.toContain("<user_message>")
+
+  const withAttachments = `<attachments>file1.csv</attachments>
+请分析这份数据`
+  expect(SessionTitle.cleanMessageText(withAttachments)).toBe("请分析这份数据")
+})
+
+test("cleanTitle does not reject titles containing 'query' in natural language", () => {
+  expect(SessionTitle.cleanTitle("ClickHouse slow query 优化")).toBe("ClickHouse slow query 优化")
+  expect(SessionTitle.cleanTitle("GraphQL query 语法解析")).toBe("GraphQL query 语法解析")
+  // But still rejects JSON-like lines with "query":
+  expect(SessionTitle.cleanTitle('{"query": "test", "limit": 10}')).toBeUndefined()
+})
+
+test("cleanTitle rejects lines containing both name and arguments keys", () => {
+  expect(SessionTitle.cleanTitle('Tool: {"name": "search", "arguments": {"q": "test"}}')).toBeUndefined()
+  // But allows titles that only mention "name" without "arguments"
+  expect(SessionTitle.cleanTitle("User name validation flow")).toBe("User name validation flow")
+})
+
+test("cleanMessageText uses line-level filtering for JSON tool calls", () => {
+  // Should NOT delete text between unrelated { and "name" across lines
+  const multiline = `We need to check { "id": 1 }
+This is important context about the data pipeline.
+The pipeline processes data daily.`
+  const cleaned = SessionTitle.cleanMessageText(multiline)
+  expect(cleaned).toContain("This is important context about the data pipeline.")
+  expect(cleaned).toContain("The pipeline processes data daily.")
+
+  // Single-line tool call JSON should still be filtered
+  const withToolLine = `Here is the answer.
+{"name": "search_knowledge", "arguments": {"query": "test"}}
+The results are good.`
+  const cleanedTool = SessionTitle.cleanMessageText(withToolLine)
+  expect(cleanedTool).toContain("Here is the answer.")
+  expect(cleanedTool).toContain("The results are good.")
+  expect(cleanedTool).not.toContain("search_knowledge")
+})
