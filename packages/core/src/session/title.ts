@@ -36,10 +36,14 @@ export const isUntitled = (session: SessionSchema.Info) =>
     time: { created: DateTime.toEpochMillis(session.time.created) },
   })
 
+const DSML_TOOL_CALL = /<[|\uFF5C]+DSML[|\uFF5C]+\s*(?:tool_)?calls>/i
+const DSML_TOOL_CALL_BLOCK = /<[|\uFF5C]+DSML[|\uFF5C]+\s*(?:tool_)?calls>[\s\S]*?(?:<\/[|\uFF5C]+DSML[|\uFF5C]+\s*(?:tool_)?calls>|$)/gi
+
 export const cleanMessageText = (raw: string): string => {
   if (!raw) return ""
   let cleaned = raw
     .replace(/<tool_call[\s\S]*?(?:<\/tool_call>|$)/gi, "")
+    .replace(DSML_TOOL_CALL_BLOCK, "")
     .replace(/<tool_response[\s\S]*?(?:<\/tool_response>|$)/gi, "")
     .replace(/<tool_result[\s\S]*?(?:<\/tool_result>|$)/gi, "")
     .replace(/<tool[\s\S]*?(?:<\/tool>|$)/gi, "")
@@ -97,7 +101,8 @@ export const cleanTitle = (raw: string | undefined): string | undefined => {
     line.includes("<tool_result") ||
     line.includes("</tool_result>") ||
     line.includes("<thinking") ||
-    line.includes("</thinking>")
+    line.includes("</thinking>") ||
+    DSML_TOOL_CALL.test(line)
   ) {
     return undefined
   }
