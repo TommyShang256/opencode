@@ -36,6 +36,80 @@ export const isUntitled = (session: SessionSchema.Info) =>
     time: { created: DateTime.toEpochMillis(session.time.created) },
   })
 
+export const cleanMessageText = (raw: string): string => {
+  if (!raw) return ""
+  let cleaned = raw
+    .replace(/<tool_call[\s\S]*?(?:<\/tool_call>|$)/gi, "")
+    .replace(/<tool_response[\s\S]*?(?:<\/tool_response>|$)/gi, "")
+    .replace(/<tool_result[\s\S]*?(?:<\/tool_result>|$)/gi, "")
+    .replace(/<tool[\s\S]*?(?:<\/tool>|$)/gi, "")
+    .replace(/<thinking[\s\S]*?(?:<\/thinking>|$)/gi, "")
+    .replace(/<thought[\s\S]*?(?:<\/thought>|$)/gi, "")
+    .replace(/<system[\s\S]*?(?:<\/system>|$)/gi, "")
+    .replace(/<\/?(?:tool_call|tool_response|tool_result|tool|thinking|thought|system)>/gi, "")
+
+  cleaned = cleaned.replace(/```(?:json|xml)?[\s\S]*?```/gi, (match) => {
+    if (match.includes('"name"') || match.includes('"arguments"') || match.includes("<tool_call")) {
+      return ""
+    }
+    return match
+  })
+
+  cleaned = cleaned.replace(/\{[\s\S]*?"(?:name|arguments)"[\s\S]*?\}/gi, "")
+
+  return cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .join("\n")
+    .trim()
+}
+
+export const cleanTitle = (raw: string | undefined): string | undefined => {
+  if (!raw) return undefined
+  let line = raw
+    .split("\n")
+    .map((l) => l.trim())
+    .find((l) => l.length > 0)
+  if (!line) return undefined
+
+  line = line
+    .replace(/^#+\s*/, "")
+    .replace(/^[-*•]\s*/, "")
+    .replace(/^["'`“‘]+/, "")
+    .replace(/["'`”’]+$/, "")
+    .trim()
+
+  if (
+    line.includes("<tool_call") ||
+    line.includes("</tool_call>") ||
+    line.includes("<tool_response") ||
+    line.includes("</tool_response>") ||
+    line.includes("<tool_result") ||
+    line.includes("</tool_result>") ||
+    line.includes("<thinking") ||
+    line.includes("</thinking>")
+  ) {
+    return undefined
+  }
+
+  if (/^<[A-Za-z_-]+[\s\S]*>.*<\/[A-Za-z_-]+>$/.test(line) || /^<[A-Za-z_-]+[\s\S]*>$/.test(line)) {
+    return undefined
+  }
+
+  if (line.startsWith("{") && line.endsWith("}")) {
+    return undefined
+  }
+  if (line.includes('"name":') || line.includes('"arguments":') || line.includes('"query":')) {
+    return undefined
+  }
+
+  line = line.trim()
+  if (!line) return undefined
+
+  return truncate(line)
+}
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -102,16 +176,20 @@ export const layer = Layer.effect(
       if (!session) return
       const firstUser = yield* SessionHistory.firstUserMessage(db, session.id)
       if (!firstUser) return
+      const userQuery = cleanMessageText(firstUser.text) || firstUser.text.trim()
       const text = !isUntitled(session)
         ? yield* store.context(session.id).pipe(
             Effect.map((messages) => {
-              const original = `Original request:\n${firstUser.text.slice(0, MAX_FIRST_MESSAGE_LENGTH)}`
+              const original = `Original request:\n${userQuery.slice(0, MAX_FIRST_MESSAGE_LENGTH)}`
               const recent = messages
                 .flatMap((message) => {
-                  if (message.type === "user" && message.id !== firstUser.id) return [`User: ${message.text.trim()}`]
+                  if (message.type === "user" && message.id !== firstUser.id) {
+                    const cleaned = cleanMessageText(message.text)
+                    return cleaned ? [`User: ${cleaned}`] : []
+                  }
                   if (message.type !== "assistant") return []
                   const text = message.content
-                    .flatMap((part) => (part.type === "text" ? [part.text.trim()] : []))
+                    .flatMap((part) => (part.type === "text" ? [cleanMessageText(part.text)] : []))
                     .filter(Boolean)
                     .join("\n")
                   return text ? [`Assistant: ${text}`] : []
@@ -121,26 +199,33 @@ export const layer = Layer.effect(
               const prefix = `${original}\n\nRecent conversation:\n`
               return `${prefix}${recent.slice(-(MAX_CONTEXT_LENGTH - prefix.length))}`
             }),
-            Effect.orElseSucceed(() => firstUser.text),
+            Effect.orElseSucceed(() => userQuery),
           )
-        : firstUser.text
+        : userQuery
       const selection = yield* context.selectTitle(session)
       if (!selection) return
-      const title =
+      const rawTitle =
         (yield* attempt({ session, agent: selection.agent, text, model: selection.selected })) ??
         (selection.primary && !isDeepStrictEqual(selection.selected.ref, selection.primary.ref)
           ? yield* attempt({ session, agent: selection.agent, text, model: selection.primary })
           : undefined)
+      if (!rawTitle) return
+      let title = cleanTitle(rawTitle)
+      if (!title && isUntitled(session)) {
+        const fallback = cleanTitle(userQuery) ?? userQuery.split("\n")[0]?.trim()
+        if (fallback) title = truncate(fallback)
+      }
       if (!title) return
       const expectedSequence = (yield* Bus.latestSequence(db, sessionID)) + 1
       const current = yield* store.get(sessionID)
-      if (!current || current.title !== session.title || current.title === truncate(title)) return
+      if (!current || current.title !== session.title || current.title === title) return
+      if (!isUntitled(current) && !cleanTitle(rawTitle)) return
       yield* bus
         .publish(
           SessionEvent.Renamed,
           {
             sessionID: session.id,
-            title: truncate(title),
+            title,
           },
           { commit: (sequence) => (sequence === expectedSequence ? Effect.void : Effect.die(titleChanged)) },
         )
