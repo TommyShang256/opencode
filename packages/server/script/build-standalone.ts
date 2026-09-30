@@ -43,7 +43,7 @@ if (options.install) {
   process.exit(0)
 }
 
-const { Script } = await import("@opencode-ai/script")
+const { Script } = await import("@opencode/script")
 const target = currentTarget(Boolean(options.baseline))
 const output = path.join(root, "packages/server/dist", target.name)
 const executable = path.join(output, "bin", `opencode2-server${target.os === "windows" ? ".exe" : ""}`)
