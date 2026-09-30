@@ -761,7 +761,12 @@ export type SessionLogOutput =
           readonly metadata?: { readonly [x: string]: unknown } | undefined
           readonly type: "session.execution.suspended"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
-          readonly location?: Location.Ref | undefined
+          readonly location?:
+            | {
+                readonly directory: AbsolutePath
+                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
+              }
+            | undefined
           readonly data: { readonly sessionID: Session.ID; readonly reason: "client-tool" }
         }
       | {
@@ -1100,7 +1105,12 @@ export type SessionLogOutput =
           readonly metadata?: { readonly [x: string]: unknown } | undefined
           readonly type: "session.tool.waiting-client"
           readonly durable: { readonly aggregateID: string; readonly seq: Event.Seq; readonly version: Event.Version }
-          readonly location?: Location.Ref | undefined
+          readonly location?:
+            | {
+                readonly directory: AbsolutePath
+                readonly workspaceID?: (string & Brand.Brand<"Workspace.ID">) | undefined
+              }
+            | undefined
           readonly data: {
             readonly sessionID: Session.ID
             readonly assistantMessageID: SessionMessage.ID
@@ -1740,11 +1750,9 @@ export interface IntegrationApi<E = never> {
   }
 }
 
-export type McpBridgeContextInput = {
-  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-}
+export type McpBridgeContextInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
 export type McpBridgeContextOutput = {
-  readonly location: Location.Info
+  readonly location: Location.PublicRef
   readonly data: {
     readonly sessionID: Session.ID
     readonly messageID: string
@@ -1756,10 +1764,8 @@ export type McpBridgeContextOperation<E = never> = (
   input?: McpBridgeContextInput,
 ) => Effect.Effect<McpBridgeContextOutput, E>
 
-export type McpListInput = {
-  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-}
-export type McpListOutput = { readonly location: Location.Info; readonly data: ReadonlyArray<Mcp.Server> }
+export type McpListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
+export type McpListOutput = { readonly location: Location.PublicRef; readonly data: ReadonlyArray<Mcp.Server> }
 export type McpListOperation<E = never> = (input?: McpListInput) => Effect.Effect<McpListOutput, E>
 
 export type McpAddInput = {
@@ -1799,15 +1805,15 @@ export type McpResourceCatalogOperation<E = never> = (
 
 export type McpToolsListInput = {
   readonly server: string
-  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  readonly location?: { readonly directory?: string | undefined } | undefined
 }
-export type McpToolsListOutput = { readonly location: Location.Info; readonly data: ReadonlyArray<Mcp.ToolInfo> }
+export type McpToolsListOutput = { readonly location: Location.PublicRef; readonly data: ReadonlyArray<Mcp.ToolInfo> }
 export type McpToolsListOperation<E = never> = (input: McpToolsListInput) => Effect.Effect<McpToolsListOutput, E>
 
 export type McpToolCallInput = {
   readonly server: string
   readonly tool: string
-  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
+  readonly location?: { readonly directory?: string | undefined } | undefined
   readonly arguments: { readonly [x: string]: unknown }
   readonly sessionId?: Session.ID | undefined
   readonly agent?: Agent.ID | undefined
@@ -2008,11 +2014,9 @@ export interface RpcApi<E = never> {
   readonly call: RpcCallOperation<E>
 }
 
-export type ToolListInput = {
-  readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-}
+export type ToolListInput = { readonly location?: { readonly directory?: string | undefined } | undefined }
 export type ToolListOutput = {
-  readonly location: Location.Info
+  readonly location: Location.PublicRef
   readonly data: ReadonlyArray<{
     readonly name: string
     readonly description: string

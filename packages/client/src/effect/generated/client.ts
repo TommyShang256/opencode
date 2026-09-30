@@ -49,6 +49,8 @@ import type {
   SessionMoveOutput,
   SessionPromptInput,
   SessionPromptOutput,
+  SessionClientToolResultsInput,
+  SessionClientToolResultsOutput,
   SessionCommandInput,
   SessionCommandOutput,
   SessionSkillInput,
@@ -155,6 +157,10 @@ import type {
   McpDisconnectOutput,
   McpResourceCatalogInput,
   McpResourceCatalogOutput,
+  McpToolsListInput,
+  McpToolsListOutput,
+  McpToolCallInput,
+  McpToolCallOutput,
   CredentialListOutput,
   CredentialCreateInput,
   CredentialCreateOutput,
@@ -193,6 +199,8 @@ import type {
   SkillListOutput,
   RpcCallInput,
   RpcCallOutput,
+  ToolListInput,
+  ToolListOutput,
   EventSubscribeOutput,
   PtyListInput,
   PtyListOutput,
@@ -495,6 +503,7 @@ const EndpointSessionPrompt = (raw: RawClient["server.session"]) => (input: Sess
         files: input["files"],
         agents: input["agents"],
         skills: input["skills"],
+        clientTools: input["clientTools"],
         metadata: input["metadata"],
         delivery: input["delivery"],
         resume: input["resume"],
@@ -780,6 +789,7 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
   update: EndpointSessionUpdate(raw),
   move: EndpointSessionMove(raw),
   prompt: EndpointSessionPrompt(raw),
+  clientToolResults: EndpointSessionClientToolResults(raw),
   command: EndpointSessionCommand(raw),
   skill: EndpointSessionSkill(raw),
   synthetic: EndpointSessionSynthetic(raw),
@@ -1030,6 +1040,22 @@ const EndpointMcpResourceCatalog = (raw: RawClient["server.mcp"]) => (input?: Mc
     raw["mcp.resource.catalog"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointMcpToolsList = (raw: RawClient["server.mcp"]) => (input: McpToolsListInput) =>
+  preserveEffect<McpToolsListOutput>()(
+    raw["mcp.tools.list"]({ params: { server: input["server"] }, query: { location: input["location"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
+const EndpointMcpToolCall = (raw: RawClient["server.mcp"]) => (input: McpToolCallInput) =>
+  preserveEffect<McpToolCallOutput>()(
+    raw["mcp.tool.call"]({
+      params: { server: input["server"], tool: input["tool"] },
+      query: { location: input["location"] },
+      payload: { arguments: input["arguments"], sessionId: input["sessionId"], agent: input["agent"] },
+    }).pipe(Effect.mapError(mapClientError)),
+  )
+
 const adaptGroupMcp = (raw: RawClient["server.mcp"]) => ({
   bridge: { context: EndpointMcpBridgeContext(raw) },
   list: EndpointMcpList(raw),
@@ -1038,6 +1064,8 @@ const adaptGroupMcp = (raw: RawClient["server.mcp"]) => ({
   connect: EndpointMcpConnect(raw),
   disconnect: EndpointMcpDisconnect(raw),
   resource: { catalog: EndpointMcpResourceCatalog(raw) },
+  tools: { list: EndpointMcpToolsList(raw) },
+  tool: { call: EndpointMcpToolCall(raw) },
 })
 
 const EndpointCredentialList = (raw: RawClient["server.credential"]) => () =>
@@ -1225,6 +1253,13 @@ const EndpointRpcCall = (raw: RawClient["server.rpc"]) => (input: RpcCallInput) 
   )
 
 const adaptGroupRpc = (raw: RawClient["server.rpc"]) => ({ call: EndpointRpcCall(raw) })
+
+const EndpointToolList = (raw: RawClient["server.tool"]) => (input?: ToolListInput) =>
+  preserveEffect<ToolListOutput>()(
+    raw["tool.list"]({ query: { location: input?.["location"] } }).pipe(Effect.mapError(mapClientError)),
+  )
+
+const adaptGroupTool = (raw: RawClient["server.tool"]) => ({ list: EndpointToolList(raw) })
 
 const EndpointEventSubscribe = (raw: RawClient["server.event"]) => () =>
   preserveStream<EventSubscribeOutput>()(
@@ -1606,6 +1641,7 @@ const adaptClient = (raw: RawClient) => ({
   command: adaptGroupCommand(raw["server.command"]),
   skill: adaptGroupSkill(raw["server.skill"]),
   rpc: adaptGroupRpc(raw["server.rpc"]),
+  tool: adaptGroupTool(raw["server.tool"]),
   event: adaptGroupEvent(raw["server.event"]),
   pty: adaptGroupPty(raw["server.pty"]),
   experimental: adaptGroupExperimental(raw["server.experimental"]),
