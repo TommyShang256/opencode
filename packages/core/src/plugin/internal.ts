@@ -95,10 +95,7 @@ import { McpCodeModeDefaultsPlugin } from "./mcp-codemode-defaults.js"
 import { ProviderPlugins } from "./provider.js"
 import { OpencodePlugin } from "./provider/opencode.js"
 import { WebSearchPlugins } from "./websearch/index.js"
-<<<<<<< HEAD
-=======
 import { PluginRuntime } from "./runtime.js"
->>>>>>> d2360fd54f (feat(core): customize the DataAgent runtime)
 import { VcsHgPlugin } from "./vcs/hg.js"
 import { ToolInputRepairPlugin } from "./tool-input-repair.js"
 import { OptimizePlugin } from "./optimize.js"
