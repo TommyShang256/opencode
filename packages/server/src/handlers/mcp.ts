@@ -53,6 +53,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           const scope = yield* readBridgeContext()
           yield* flushPlugins
           const service = yield* Mcp.Service
+          yield* service.awaitStartup()
           const servers = yield* service.servers()
           const visible = scope.reference === undefined ? undefined
             : new Set((yield* scopedCatalog(yield* service.tools(), scope)).map(tool => tool.server))
@@ -98,6 +99,7 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           const scope = yield* readBridgeContext()
           yield* flushPlugins
           const service = yield* Mcp.Service
+          yield* service.awaitStartup()
           const servers = yield* service.servers()
           if (!servers.some((server) => server.name === ctx.params.server)) {
             return yield* new McpServerNotFoundError({
@@ -122,7 +124,6 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           const permission = yield* Permission.Service
           const session = yield* Session.Service
           const location = yield* Location.Service
-          const agents = yield* Agent.Service
           const tool = (yield* service.tools()).find(
             (candidate) => candidate.server === ctx.params.server && candidate.name === ctx.params.tool,
           )
@@ -139,16 +140,6 @@ export const McpHandler = HttpApiBuilder.group(Api, "server.mcp", (handlers) =>
           yield* hooks.trigger("mcp", "bridge.validate", {
             server: ctx.params.server, tool: ctx.params.tool, input: ctx.payload.arguments, toolContext,
           }).pipe(Effect.mapError(() => new PermissionDeniedError({ message: "MCP_BRIDGE_CALL_DENIED", permission: action })))
-
-          // Agent state loads asynchronously at startup; permission rules resolve
-          // via agents, and an unloaded registry fails CLOSED (deny-all). Wait
-          // briefly for it so early bridge calls aren't spuriously denied.
-          if (authorization.decision !== "allow") {
-            for (let i = 0; i < 25; i++) {
-              if ((yield* agents.list()).length > 0) break
-              yield* Effect.sleep("200 millis")
-            }
-          }
 
           const locationRef = Location.Ref.make({
             directory: location.directory,

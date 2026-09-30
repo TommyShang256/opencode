@@ -3,6 +3,7 @@ export * as ShellParse from "./parse.js"
 import { Effect } from "effect"
 import { fileURLToPath } from "url"
 import os from "os"
+import { existsSync } from "fs"
 import path from "path"
 import type { Node } from "web-tree-sitter"
 import { shellParserWasm } from "#shell-parser-wasm"
@@ -18,6 +19,7 @@ export type Result = {
   commands: Array<{ resource: string; save: string }>
   directories: string[]
   deletions?: string[]
+  truncations?: string[]
 }
 
 const ARITY: Record<string, number> = {
@@ -198,15 +200,17 @@ const scanLegacy = Effect.fnUntraced(function* (command: string, shell: string, 
               save: `${prefix(tokens).join(" ")} *`,
             })
             result.deletions.push(...deleteResources(tokens, resource, cwd))
+            result.truncations.push(...truncationTargets(resource, cwd).filter(existsSync))
             return result
           },
           {
             commands: [] as Array<{ resource: string; save: string }>,
             directories: [] as string[],
             deletions: [] as string[],
+            truncations: [] as string[],
           },
         )
-        if (result.deletions.length > 0) return result
+        if (result.deletions.length > 0 || result.truncations.length > 0) return result
         return { commands: result.commands, directories: result.directories }
       }),
     (tree) => Effect.sync(() => tree.delete()),
@@ -223,7 +227,7 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
   if (result.kind === "opaque")
     return yield* Effect.fail(new Error(`Portable shell scanner cannot analyze command: ${result.reason}`))
 
-  const output = { commands: [] as Result["commands"], directories: [] as string[], deletions: [] as string[] }
+  const output = { commands: [] as Result["commands"], directories: [] as string[], deletions: [] as string[], truncations: [] as string[] }
   for (const item of result.commands) {
     // The legacy command walk skips declarations, not the substitutions within them.
     if (item.declaration) continue
@@ -251,6 +255,7 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
       continue
     }
     output.deletions.push(...deleteResources(item.words, item.resource, cwd))
+    output.truncations.push(...truncationTargets(item.resource, cwd).filter(existsSync))
     const selected = prefix(words.slice(0, PREFIX_LENGTH))
     const conventional = `${selected.join(" ")} *`
     const end = item.wordEnds?.[selected.length - 1]
@@ -271,7 +276,7 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
       save,
     })
   }
-  if (output.deletions.length > 0) return output
+  if (output.deletions.length > 0 || output.truncations.length > 0) return output
   return { commands: output.commands, directories: output.directories }
 })
 
@@ -281,33 +286,31 @@ const SHELL_COMMANDS = new Set(["sh", "bash", "dash", "zsh", "ksh"])
 function deleteResources(words: ReadonlyArray<string>, resource: string, cwd: string): string[] {
   const normalized = unwrap(words)
   const command = executable(normalized[0] ?? "")
-  const redirects = truncationTargets(resource, cwd)
   if (SHELL_COMMANDS.has(command)) {
     const script = shellScript(normalized)
-    return [...(script ? nestedDeleteResources(script, cwd) : []), ...redirects]
+    return script ? nestedDeleteResources(script, cwd) : []
   }
   if (command === "eval")
-    return [...nestedDeleteResources(normalized.slice(1).map(unquote).join(" "), cwd), ...redirects]
+    return nestedDeleteResources(normalized.slice(1).map(unquote).join(" "), cwd)
   if (command === "find" && hasFindDelete(normalized)) {
     const values = normalized.slice(1)
     const expression = values.findIndex((word) => unquote(word).startsWith("-"))
     const roots = values.slice(0, expression < 0 ? undefined : expression)
-    return [...(roots.length > 0 ? roots : ["."]).map((word) => deletionPath(word, cwd)), ...redirects]
+    return (roots.length > 0 ? roots : ["."]).map((word) => deletionPath(word, cwd))
   }
   if (command === "git") {
     const git = gitCommand(normalized, cwd)
-    if (git.command === "clean") return [git.directory, ...redirects]
+    if (git.command === "clean") return [git.directory]
     if (git.command === "rm")
       return [
         ...operands(normalized.slice(git.index + 1)).map((word) => deletionPath(word, git.directory)),
-        ...redirects,
       ]
   }
   if (command === "xargs" && DELETE_COMMANDS.has(executable(xargsCommand(normalized))))
-    return [path.resolve(cwd), ...redirects]
-  if (command === "mv") return [...operands(normalized.slice(1)).map((word) => deletionPath(word, cwd)), ...redirects]
-  if (!DELETE_COMMANDS.has(command)) return redirects
-  return [...operands(normalized.slice(1)).map((word) => deletionPath(word, cwd)), ...redirects]
+    return [path.resolve(cwd)]
+  if (command === "mv") return operands(normalized.slice(1)).map((word) => deletionPath(word, cwd))
+  if (!DELETE_COMMANDS.has(command)) return []
+  return operands(normalized.slice(1)).map((word) => deletionPath(word, cwd))
 }
 
 function unwrap(words: ReadonlyArray<string>): ReadonlyArray<string> {

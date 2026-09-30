@@ -147,6 +147,22 @@ export const Plugin = {
           agent: context.agent,
           source,
         })
+      const truncations = [...new Set(parsed.truncations ?? [])]
+      if (truncations.length > 0)
+        yield* permission.assert({
+          action: "truncate",
+          resources: truncations,
+          save: ["*"],
+          metadata: {
+            command: invocation.command,
+            workdir: target.absolute,
+            filepath: truncations.join(", "),
+            preview: truncations.map((item) => `Truncate ${item}`).join("\n"),
+          },
+          sessionID: context.sessionID,
+          agent: context.agent,
+          source,
+        })
       if (parsed.commands.length > 0)
         yield* permission.assert({
           action: name,

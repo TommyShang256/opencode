@@ -151,6 +151,8 @@ export interface Interface extends State.Transformable<Editor> {
   readonly disconnect: (server: ServerName | string) => Effect.Effect<void, NotFoundError>
   readonly remove: (server: ServerName | string) => Effect.Effect<void, NotFoundError>
   readonly tools: () => Effect.Effect<Tool[]>
+  /** Wait until all configured MCP servers finish their initial connection attempt. */
+  readonly awaitStartup: () => Effect.Effect<void>
   readonly callTool: (input: {
     readonly server: ServerName | string
     readonly name: string
@@ -742,6 +744,9 @@ export const layer = (options?: Options) =>
           return Array.from(entries.values())
             .flatMap((entry) => entry.tools ?? [])
             .toSorted((a, b) => a.server.localeCompare(b.server) || a.name.localeCompare(b.name))
+        }),
+        awaitStartup: Effect.fn("MCP.awaitStartup")(function* () {
+          yield* Effect.forEach(entries.values(), (entry) => entry.startup.await, { discard: true })
         }),
         callTool: Effect.fn("MCP.callTool")(function* (input) {
           const target = yield* requireServer(input.server)

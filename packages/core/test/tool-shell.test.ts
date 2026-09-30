@@ -300,6 +300,7 @@ const runRejectedDeleteCommand = (
   command: string,
   targets: ReadonlyArray<string>,
   marker: string,
+  action = "delete",
 ) =>
   Effect.gen(function* () {
     const permission = yield* Permission.Service
@@ -309,19 +310,19 @@ const runRejectedDeleteCommand = (
       Stream.runForEach((event) => Queue.offer(queue, event.data)),
       Effect.forkScoped({ startImmediately: true }),
     )
-    const execution = yield* executeTool(registry, call({ command }, `call-delete-${Permission.ID.create()}`)).pipe(
+    const execution = yield* executeTool(registry, call({ command }, `call-${action}-${Permission.ID.create()}`)).pipe(
       Effect.forkScoped,
     )
     const request = yield* Queue.take(queue)
     expect(request).toMatchObject({
-      action: "delete",
+      action,
       resources: targets,
       save: ["*"],
       metadata: {
         command,
         workdir: path.dirname(marker),
         filepath: targets.join(", "),
-        preview: targets.map((target) => `Delete ${target}`).join("\n"),
+        preview: targets.map((target) => `${action === "truncate" ? "Truncate" : "Delete"} ${target}`).join("\n"),
       },
     })
     const present = (target: string) =>
@@ -439,6 +440,7 @@ describe("ShellTool scanner permissions", () => {
             ": > /dev/null && touch redirect-marker",
             ["/dev/null"],
             path.join(fixture.active, "redirect-marker"),
+            "truncate",
           )
         }),
       ))

@@ -259,8 +259,9 @@ it.live("lists registered tools through the location-scoped capability endpoint"
 it.live("lists tools for one MCP server without executing them", () =>
   Effect.gen(function* () {
     const mcp = Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
       servers: () =>
-        Effect.succeed([new Mcp.ServerInfo({ name: Mcp.ServerName.make("demo"), status: { status: "connected" } })]),
+        Effect.succeed([{ name: Mcp.ServerName.make("demo"), status: { status: "connected" } }]),
       tools: () =>
         Effect.succeed([
           new Mcp.Tool({
@@ -290,6 +291,7 @@ it.live("enforces the declared script caller contract at the MCP bridge", () =>
     const called: string[] = []
     const meta = (callers: string[]) => ({ "com.huawei.ryoma.dataagent/allowed-callers": callers })
     const mcp = Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
       tools: () =>
         Effect.succeed([
           new Mcp.Tool({ server: Mcp.ServerName.make("skill"), name: "download", meta: meta(["script"]) }),
@@ -333,6 +335,7 @@ it.live("enforces the declared script caller contract at the MCP bridge", () =>
 it.live("resumes an MCP bridge call after a one-time approval", () =>
   Effect.gen(function* () {
     const mcp = Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
       tools: () => Effect.succeed([]),
       callTool: (input) =>
         Effect.succeed({

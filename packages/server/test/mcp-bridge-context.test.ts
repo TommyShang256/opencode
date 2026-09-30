@@ -1,11 +1,11 @@
 import { expect } from "bun:test"
 import { Effect, Exit, Layer, Scope } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { ShellContext } from "@opencode-ai/core/shell/context"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
-import { Mcp } from "@opencode-ai/core/mcp/index"
-import { Tool } from "@opencode-ai/schema/tool"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { ShellContext } from "@opencode/core/shell/context"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { Mcp } from "@opencode/core/mcp/index"
+import { Tool } from "@opencode/schema/tool"
 import { it } from "../../core/test/lib/effect"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { ServerFetch } from "../src/fetch"
@@ -19,7 +19,8 @@ it.live("binds MCP bridge calls to issued scope and applies final policy before 
     const hooks = yield* PluginHooks.Service
     const invoked: Array<Parameters<Mcp.Interface["callTool"]>[0]> = []
     const mcp = Layer.mock(Mcp.Service, {
-      servers: () => Effect.succeed(["catalog", "empty"].map(name => new Mcp.ServerInfo({ name: Mcp.ServerName.make(name), status: { status: "connected" } }))),
+        awaitStartup: () => Effect.void,
+      servers: () => Effect.succeed(["catalog", "empty"].map(name => ({ name: Mcp.ServerName.make(name), status: { status: "connected" } }))),
       tools: () => Effect.succeed(["lookup", "private", "model-only"].map(name => new Mcp.Tool({
         server: Mcp.ServerName.make("catalog"), name,
         meta: { "fixture/callers": [name === "model-only" ? "agent" : "script"] },

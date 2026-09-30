@@ -370,6 +370,7 @@ const settled = (service: Mcp.Interface, name = "resources") =>
   }).pipe(Effect.retry({ times: 200, schedule: Schedule.spaced("10 millis") }))
 
 const mcp = Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
   tools: () =>
     Effect.succeed([
       {
@@ -1580,6 +1581,7 @@ test("uses a remote server client identity instead of the application default", 
         const server = yield* resourceServer()
         yield* Effect.gen(function* () {
           const service = yield* Mcp.Service
+          yield* service.awaitStartup()
           yield* service.tools()
           expect(server.clientVersion()).toMatchObject({
             name: "dataagent-browser",
@@ -2290,6 +2292,7 @@ testEffect(Layer.empty).live("keeps bridge-only MCP tools out of the model regis
           AppNodeBuilder.build(LayerNode.group([Tool.node, McpTool.node, Bus.node]), [
             Mcp.node.replace(
               Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
                 tools: () => Ref.get(catalog),
                 callTool: (input) =>
                   Effect.succeed({
@@ -2327,7 +2330,8 @@ testEffect(Layer.empty).effect("flush includes MCP tools discovered after the in
       yield* Fiber.join(flush)
       expect((yield* toolDefinitions(registry)).map(tool => tool.name)).toContain("demo_read_job")
     }).pipe(Effect.provide(AppNodeBuilder.build(LayerNode.group([Tool.node, McpTool.node]), [
-      Mcp.node.replace(Layer.mock(Mcp.Service, { tools: () => Ref.get(catalog) })),
+      Mcp.node.replace(Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void, tools: () => Ref.get(catalog) })),
       Permission.node.replace(Layer.mock(Permission.Service, { assert: () => Effect.void })),
       Image.node.replace(imagePassthrough),
     ])))
@@ -2358,6 +2362,7 @@ testEffect(Layer.empty).effect("coalesces queued MCP tool notifications after in
       AppNodeBuilder.build(LayerNode.group([Tool.node, McpTool.node, Bus.node]), [
         Mcp.node.replace(
           Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
             tools: () =>
               Effect.sync(() => [
                 {

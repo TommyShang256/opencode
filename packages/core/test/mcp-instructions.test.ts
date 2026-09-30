@@ -18,6 +18,7 @@ const layer = (catalog: () => Mcp.ServerInstructions[], tools: () => Mcp.Tool[])
   AppNodeBuilder.build(McpInstructions.node, [
     Mcp.node.replace(
       Layer.mock(Mcp.Service, {
+        awaitStartup: () => Effect.void,
         instructions: () => Effect.succeed(catalog()),
         tools: () => Effect.succeed(tools()),
       }),

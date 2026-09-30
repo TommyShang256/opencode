@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Scope } from "effect"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { ShellContext } from "@opencode-ai/core/shell/context"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { ShellContext } from "@opencode/core/shell/context"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(AppNodeBuilder.build(ShellContext.node))
