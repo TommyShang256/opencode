@@ -14,11 +14,11 @@ import { useLanguage } from "@/runtime/i18n/language"
 import { useCommand } from "@/shell/commands/command"
 import { useTabs } from "@/shell/tabs/tabs"
 import { createTabComposerState } from "@/composer/persistence"
-import { base64Encode } from "@opencode-ai/util/encode"
+import { base64Encode } from "@opencode/util/encode"
 import { showToast } from "@/shell/notifications/toast"
-import { canStartTabDrag, isTabCloseTarget } from "./tab-gesture"
+import { isTabCloseTarget } from "./tab-gesture"
 import { adjacentTabKey, mergeVisibleTabOrder } from "./tab-order"
-import type { SessionInfo } from "@opencode-ai/client/promise"
+import type { SessionInfo } from "@opencode/client/promise"
 
 function SessionTabSlot(props: {
   tab: SessionTab
@@ -27,6 +27,7 @@ function SessionTabSlot(props: {
   active: boolean
   orientation: "horizontal" | "vertical"
   session: SessionInfo | undefined
+  preparing: boolean
   fallbackTitle?: string
   onRename: (title: string) => Promise<void>
   onNavigate: (element: HTMLDivElement) => void
@@ -62,6 +63,7 @@ function SessionTabSlot(props: {
         href={tabHref(props.tab)}
         server={props.tab.server}
         session={props.session}
+        preparing={props.preparing}
         fallbackTitle={props.fallbackTitle}
         onRename={props.onRename}
         onNavigate={() => props.onNavigate(ref)}
@@ -114,7 +116,7 @@ function SessionTabEntry(props: {
 
     ctx.data.session.remember({ ...value, title })
     try {
-      await ctx.sdk.api.session.rename({ sessionID: value.id, title })
+      await ctx.sdk.api.session.update({ sessionID: value.id, title })
     } catch (err) {
       const current = session()
       const currentCtx = props.serverCtx
@@ -136,8 +138,7 @@ function SessionTabEntry(props: {
       () =>
         void Promise.allSettled([
           ctx.data.session.sync(value.id, { children: true }),
-          ctx.data.session.pending.sync(value.id),
-          ctx.data.session.message.sync(value.id),
+          // The selected timeline loads transcript and inbox data; inactive tabs need only attention and metadata.
           ctx.data.session.permission.sync(value.id),
           ctx.data.session.form.sync(value.id),
         ]),
@@ -167,9 +168,10 @@ function SessionTabEntry(props: {
         active={props.active}
         orientation={props.orientation}
         session={session()}
+        preparing={!!pending()}
         fallbackTitle={
           pending()
-            ? language.t("command.session.new")
+            ? language.t("session.tab.session")
             : (persisted()?.title ?? (missingSession() ? language.t("session.tab.unknown") : undefined))
         }
         onRename={rename}
@@ -290,9 +292,11 @@ export function TitlebarTabStrip(props: {
         <DragDropProvider
           sensors={[
             PointerSensor.configure({
-              activationConstraints: [new PointerActivationConstraints.Distance({ value: 4 })],
+              activationConstraints: (event) =>
+                event.pointerType === "touch"
+                  ? [new PointerActivationConstraints.Distance({ value: 8 })]
+                  : [new PointerActivationConstraints.Distance({ value: 4 })],
               preventActivation: (event) =>
-                !canStartTabDrag(event.pointerType) ||
                 isTabCloseTarget(event.target) ||
                 (event.target instanceof Element && !!event.target.closest('[contenteditable="true"]')),
             }),
@@ -311,6 +315,7 @@ export function TitlebarTabStrip(props: {
             if (!source) return
             const tab = props.tabs.find((item) => tabKey(item) === source.id.toString())
             if (!tab) return
+            if (vertical()) return
             const tabEl = source.element?.querySelector<HTMLDivElement>("[data-titlebar-tab]")
             props.onNavigate(tab, tabEl ?? undefined)
           }}
@@ -375,7 +380,7 @@ export function TitlebarTabStrip(props: {
                     index={visibleIndex()}
                     active={props.currentTab === tab}
                     orientation={vertical() ? "vertical" : "horizontal"}
-                    title={language.t("command.session.new")}
+                    title={language.t("session.tab.session")}
                     onNavigate={(element) => {
                       ref = element
                       props.onNavigate(tab, element)

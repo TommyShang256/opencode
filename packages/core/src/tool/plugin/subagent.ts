@@ -1,20 +1,22 @@
 export * as SubagentTool from "./subagent.js"
 
-import { ToolFailure } from "@opencode-ai/ai"
-import type { Context } from "@opencode-ai/plugin/effect/plugin"
-import { Tool } from "@opencode-ai/schema/tool"
-import { Effect, Fiber, Schema, Scope } from "effect"
+import { ToolFailure } from "@opencode/ai"
+import type { Context } from "@opencode/plugin/effect/plugin"
+import type { SessionHooks } from "@opencode/plugin/effect/session"
+import { Tool } from "@opencode/schema/tool"
+import { Effect, Fiber, Predicate, Schema } from "effect"
 import { Agent } from "../../agent.js"
 import { Config } from "../../config.js"
-import type { Job } from "../../job.js"
-import { PluginRuntime } from "../../plugin/runtime.js"
+import { Job } from "../../job.js"
+import { Model } from "../../model.js"
 import { Permission } from "../../permission.js"
+import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentCompletion } from "../../session/subagent-completion.js"
+import { SubagentJob } from "../../session/subagent-job.js"
 
 export const name = "subagent"
 
-const NO_TEXT = "Subagent completed without a text response."
 const backgroundResult = (sessionID: SessionSchema.ID) => ({
   sessionID,
   status: "running" as const,
@@ -26,9 +28,16 @@ const backgroundResult = (sessionID: SessionSchema.ID) => ({
 })
 
 export const Input = Schema.Struct({
-  agent: Schema.String.annotate({ description: "The type of specialized agent to use for this task" }),
+  agent: Schema.String.annotate({
+    description:
+      "The type of specialized agent to use for this task. If the user asks for a subagent by a name that is not one of the available subagents, they most likely mean a model: pick a suitable agent and pass the name through the model parameter instead.",
+  }),
   description: Schema.String.annotate({ description: "A short 3-5 word label for the task, displayed to the user" }),
   prompt: Schema.String.annotate({ description: "The task for the subagent to perform" }),
+  model: Schema.optionalKey(Schema.String).annotate({
+    description:
+      'NEVER set this unless the user explicitly asks for a particular model or variant. The value is written as "providerID/modelID", or "providerID/modelID#variant" to include a variant. Do not guess the ID: look the model up with the models tool, filtering to your own provider first.',
+  }),
   sessionID: Schema.optionalKey(SessionSchema.ID).annotate({
     description:
       "Continue a specific previous subagent conversation by passing its sessionID. Calls without a sessionID start a new conversation.",
@@ -56,29 +65,37 @@ export const description = [
 export const Plugin = {
   id: "opencode.tool.subagent",
   effect: Effect.fn("SubagentTool.Plugin")(function* (ctx: Context) {
-    const runtime = yield* PluginRuntime.Service
+    const sessions = yield* Session.Service
+    const jobs = yield* Job.Service
     const agents = yield* Agent.Service
     const config = yield* Config.Service
     const permission = yield* Permission.Service
-    const scope = yield* Scope.Scope
-    // One completion observer per job generation. Keyed by child plus start time so a fresh
-    // continuation job is observable even while a settled generation's observer is finalizing.
-    const notifications = new Set<string>()
+    const models = yield* Model.Service
+    const subagents = yield* SubagentJob.make
 
-    // Concatenate the child's final completed assistant text. Distinguishes "completed with no
-    // text" (generic string) from "failed" (the run effect fails, surfaced as a job error).
-    const latestAssistantText = Effect.fn("SubagentTool.latestAssistantText")(function* (sessionID: SessionSchema.ID) {
-      const messages = yield* runtime.session.messages({ sessionID, order: "desc", limit: 20 })
-      const assistant = messages.find(
-        (message) =>
-          message.type === "assistant" && message.time.completed !== undefined && message.error === undefined,
+    const resolveModel = Effect.fn("SubagentTool.resolveModel")(function* (input: string) {
+      const ref = yield* Effect.try({
+        try: () => Model.Ref.parse(input),
+        catch: () =>
+          new ToolFailure({
+            message: `Invalid model "${input}". Use "providerID/modelID" or "providerID/modelID#variant".`,
+          }),
+      })
+      const model = (yield* models.available()).find(
+        (model) => model.providerID === ref.providerID && model.id === ref.id,
       )
-      if (assistant === undefined || assistant.type !== "assistant") return NO_TEXT
-      const text = assistant.content
-        .filter((part): part is Extract<typeof part, { type: "text" }> => part.type === "text")
-        .map((part) => part.text)
-        .join("")
-      return text.length > 0 ? text : NO_TEXT
+      if (model === undefined)
+        return yield* new ToolFailure({
+          message: `Model "${ref.providerID}/${ref.id}" is not available. Use the models tool to see what is available.`,
+        })
+      if (ref.variant !== undefined && !model.variants.some((variant) => variant.id === ref.variant))
+        return yield* new ToolFailure({
+          message:
+            model.variants.length === 0
+              ? `Model "${ref.providerID}/${ref.id}" has no variants. Omit the variant.`
+              : `Variant "${ref.variant}" is not available for "${ref.providerID}/${ref.id}". Available: ${model.variants.map((variant) => variant.id).join(", ")}.`,
+        })
+      return ref
     })
 
     const reportChildProgress = Effect.fn("SubagentTool.reportChildProgress")(function* (
@@ -87,14 +104,13 @@ export const Plugin = {
     ) {
       let fingerprint = ""
       yield* Effect.gen(function* () {
-        const messages = yield* runtime.session.messages({ sessionID, order: "desc", limit: 20 })
+        const messages = yield* sessions.messages({ sessionID, order: "desc", limit: 20 })
         const activities = messages
           .toReversed()
           .flatMap((message) => {
             if (message.type !== "assistant") return []
             return message.content.flatMap((part) => {
-              if (part.type === "tool")
-                return [{ kind: "tool", label: part.name, status: part.state.status }]
+              if (part.type === "tool") return [{ kind: "tool", label: part.name, status: part.state.status }]
               if (part.type === "text" && part.text.trim())
                 return [{ kind: "text", label: part.text.trim().slice(0, 240), status: "completed" }]
               return []
@@ -110,25 +126,9 @@ export const Plugin = {
       }).pipe(Effect.forever)
     })
 
-    const notifyWhenDone = Effect.fn("SubagentTool.notifyWhenDone")(function* (
-      recovery: Extract<Job.Recovery, { kind: "subagent" }>,
-      startedAt: number,
-    ) {
-      const key = `${recovery.childSessionID}:${startedAt}`
-      if (notifications.has(key)) return
-      notifications.add(key)
-      yield* Effect.gen(function* () {
-        const info = (yield* runtime.job.wait({ id: recovery.childSessionID })).info
-        if (info) yield* SubagentCompletion.deliver(runtime.session, runtime.job, { ...info, recovery })
-      }).pipe(
-        Effect.ensuring(Effect.sync(() => notifications.delete(key))),
-        Effect.forkIn(scope, { startImmediately: true }),
-      )
-    })
-
     yield* ctx.tool
-      .transform((draft) =>
-        draft.add({
+      .transform((editor) =>
+        editor.add({
           name,
           options: { codemode: false },
           description,
@@ -136,7 +136,7 @@ export const Plugin = {
           output: Output,
           execute: (input, context) =>
             Effect.gen(function* () {
-              const parent = yield* runtime.session
+              const parent = yield* sessions
                 .get(context.sessionID)
                 .pipe(
                   Effect.mapError(
@@ -147,7 +147,7 @@ export const Plugin = {
               let depth = 0
               while (current.parentID) {
                 depth++
-                current = yield* runtime.session
+                current = yield* sessions
                   .get(current.parentID)
                   .pipe(
                     Effect.mapError(
@@ -182,7 +182,7 @@ export const Plugin = {
               const existing =
                 input.sessionID === undefined
                   ? undefined
-                  : yield* runtime.session
+                  : yield* sessions
                       .get(input.sessionID)
                       .pipe(
                         Effect.mapError(
@@ -194,27 +194,26 @@ export const Plugin = {
                 return yield* new ToolFailure({
                   message: `Session ${existing.id} is not a child of the current session`,
                 })
+              const override = input.model === undefined ? undefined : yield* resolveModel(input.model)
               // Continuing with a different agent switches the child, mirroring create semantics
-              // where the agent's configured model wins over the inherited one.
-              if (existing !== undefined && existing.agent !== agent.id) {
-                yield* runtime.session.switchAgent({ sessionID: existing.id, agent: agent.id }).pipe(
-                  Effect.andThen(
-                    agent.model === undefined
-                      ? Effect.void
-                      : runtime.session.switchModel({ sessionID: existing.id, model: agent.model }),
-                  ),
+              // where an explicit model wins over the agent's configured model, which wins over the inherited one.
+              if (existing !== undefined) {
+                const switched = existing.agent !== agent.id
+                const model = override ?? (switched ? agent.model : undefined)
+                yield* Effect.all([
+                  switched ? sessions.switchAgent({ sessionID: existing.id, agent: agent.id }) : Effect.void,
+                  model === undefined ? Effect.void : sessions.switchModel({ sessionID: existing.id, model }),
+                ]).pipe(
                   Effect.mapError(
-                    (error) =>
-                      new ToolFailure({ message: `Failed to switch subagent session agent: ${existing.id}`, error }),
+                    (error) => new ToolFailure({ message: `Failed to switch subagent session: ${existing.id}`, error }),
                   ),
                 )
               }
 
-              // Model selection is policy/config/session state, not an LLM-facing tool argument.
-              const model = agent.model ?? parent.model
+              const model = override ?? agent.model ?? parent.model
               const child =
                 existing ??
-                (yield* runtime.session
+                (yield* sessions
                   .create({
                     parentID: context.sessionID,
                     title: input.description,
@@ -232,7 +231,7 @@ export const Plugin = {
 
               // Standard prompt admission outside the job: Job.start joining a running child skips
               // its run effect, and the default wake starts an idle child or steers a running one.
-              yield* runtime.session
+              yield* sessions
                 .prompt({
                   sessionID: child.id,
                   // Per-admission provenance, not authority. A reused child can have many delegations.
@@ -262,34 +261,24 @@ export const Plugin = {
                 agent: agent.name,
                 description: input.description,
               }
-              const info = yield* runtime.job.start({
-                id: child.id,
-                type: name,
-                title: input.description,
-                metadata: {},
-                recovery,
-                run: runtime.session.resume(child.id).pipe(Effect.andThen(latestAssistantText(child.id))),
-              })
+              yield* subagents.start(recovery)
 
               if (background) {
-                yield* runtime.job.background(info.id)
-                yield* notifyWhenDone(recovery, info.started_at)
+                yield* subagents.background(recovery)
                 return backgroundResult(child.id)
               }
 
-              const progressFiber = yield* reportChildProgress(child.id, context.progress).pipe(
-                Effect.forkChild({ startImmediately: true }),
-              )
-              const result = yield* runtime.job.block({ id: child.id, sessionID: context.sessionID }).pipe(
+const progressFiber = yield* reportChildProgress(child.id, context.progress).pipe(Effect.forkChild({ startImmediately: true }))
+              const result = yield* jobs.block({ id: child.id, sessionID: context.sessionID }).pipe(
                 Effect.onInterrupt(() =>
-                  Effect.all([runtime.session.interrupt(child.id), runtime.job.cancel(child.id)], {
+                  Effect.all([sessions.interrupt(child.id), jobs.cancel(child.id)], {
                     discard: true,
                   }),
                 ),
                 Effect.ensuring(Fiber.interrupt(progressFiber)),
               )
               if (result?.type === "backgrounded") {
-                yield* notifyWhenDone(recovery, result.info.started_at)
+                yield* subagents.notify(recovery, result.info.started_at)
                 return backgroundResult(child.id)
               }
               // Failure surfaces keep the sessionID visible so the model can continue the child.
@@ -299,7 +288,11 @@ export const Plugin = {
                 })
               if (result?.info.status === "cancelled")
                 return yield* new ToolFailure({ message: `Subagent cancelled (sessionID: ${child.id})` })
-              return { sessionID: child.id, status: "completed" as const, output: result?.info.output ?? NO_TEXT }
+              return {
+                sessionID: child.id,
+                status: "completed" as const,
+                output: result?.info.output ?? SubagentCompletion.NO_TEXT,
+              }
             }).pipe(
               Effect.map((output) => ({
                 output,
@@ -314,7 +307,18 @@ export const Plugin = {
       )
       .pipe(Effect.orDie)
 
-    yield* ctx.session.hook("context", (event) =>
+    yield* ctx.tool.hook("execute.before", (event) =>
+      Effect.sync(() => {
+        if (event.tool !== name || !Predicate.isObject(event.input)) return
+        if (event.input.model !== "" && event.input.sessionID !== "") return
+        const input = { ...event.input }
+        if (input.model === "") delete input.model
+        if (input.sessionID === "") delete input.sessionID
+        event.input = input
+      }),
+    )
+
+    const hook = (event: SessionHooks["context"]) =>
       Effect.gen(function* () {
         const tool = event.tools[name]
         if (!tool) return
@@ -338,7 +342,9 @@ export const Plugin = {
               `- ${agent.id}: ${agent.description ?? "This subagent should only be called when explicitly requested."}`,
           ),
         ].join("\n")
-      }),
-    )
+      })
+    yield* ctx.session.hook("context", hook)
+    yield* ctx.session.hook("compaction", hook)
+    yield* ctx.session.hook("generate", hook)
   }),
 }

@@ -1,16 +1,18 @@
 export * as ShellTool from "./shell.js"
 
-import { ToolFailure } from "@opencode-ai/ai"
-import type { Context } from "@opencode-ai/plugin/effect/plugin"
-import type { ShellCreateBefore } from "@opencode-ai/plugin/effect/shell"
-import type { Tool } from "@opencode-ai/schema/tool"
+import { ToolFailure } from "@opencode/ai"
+import type { Context } from "@opencode/plugin/effect/plugin"
+import type { SessionHooks } from "@opencode/plugin/effect/session"
+import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
+import type { Tool } from "@opencode/schema/tool"
 import { Deferred, Effect, Schema, Scope } from "effect"
 import { Config } from "../../config.js"
 import { Environment } from "../../environment/index.js"
-import { LocationMutation } from "../../location-mutation.js"
+import { Job } from "../../job.js"
+import { FileAccess } from "../../file-access.js"
 import { Permission } from "../../permission.js"
-import { PluginRuntime } from "../../plugin/runtime.js"
 import { NonNegativeInt } from "../../schema.js"
+import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { Shell } from "../../shell.js"
 import { ShellParse } from "../../shell/parse.js"
@@ -21,7 +23,7 @@ export const name = "shell"
 export const DEFAULT_TIMEOUT_MS = 2 * 60 * 1_000
 
 const BACKGROUND_INSTRUCTION =
-  "You will be notified automatically when the command finishes. The notification will include the command's output. DO NOT run sleep commands or poll the output file to check for completion. You can read from the file when its current output would be useful, such as when inspecting logs from a background server. Otherwise, continue with other work or end your response."
+  "You will be notified automatically when the command finishes. The notification will include the command's output. Unless the user explicitly asks otherwise, DO NOT poll for completion, even if you need the final result to continue. Repeatedly sleeping and reading or searching the output file is polling, not useful work. You may read the current output if it lets you do useful work now, but do not repeatedly check it while waiting for the command to finish. Keep working on anything that does not depend on the result. If you have nothing else to do, end your response; you will be resumed automatically when the command finishes."
 const OS =
   process.platform === "darwin"
     ? "macOS"
@@ -53,12 +55,13 @@ export const Input = Schema.Struct({
   }),
   background: Schema.optionalKey(Schema.Boolean).annotate({
     description:
-      "Run the command in the background and return immediately. You will be notified when it completes. DO NOT poll its progress.",
+      "Run the command in the background and return immediately (useful for dev servers and long-running builds). You do not need to use '&' at the end of the command when using this parameter. You will be notified when it completes. DO NOT poll for completion.",
   }),
 })
 
 const StructuredOutput = Schema.Struct({
   exit: Schema.optionalKey(Schema.Number),
+  signal: Schema.optionalKey(Schema.String),
   shellID: Schema.optionalKey(Schema.String),
   truncated: Schema.Boolean,
   timeout: Schema.optionalKey(Schema.Boolean),
@@ -74,7 +77,7 @@ type Output = typeof Output.Type
 
 const resultMessages = (output: Output) => {
   const notice = output.status === "running" ? BACKGROUND_INSTRUCTION : ShellResult.notice(output)
-  return [output.output, ...(notice ? [notice] : [])]
+  return [...(output.output ? [output.output] : []), ...(notice ? [notice] : [])]
 }
 
 const toolResult = (output: Output) => {
@@ -99,10 +102,11 @@ const backgroundResult = (shellID: string, file: string) => ({
 export const Plugin = {
   id: "opencode.tool.shell",
   effect: Effect.fn("ShellTool.Plugin")(function* (ctx: Context) {
-    const runtime = yield* PluginRuntime.Service
+    const sessions = yield* Session.Service
+    const jobs = yield* Job.Service
     const scope = yield* Scope.Scope
     const environment = yield* Environment.Service
-    const mutation = yield* LocationMutation.Service
+    const access = yield* FileAccess.Service
     const shell = yield* Shell.Service
     const shellSelect = yield* ShellSelect.Service
     const compatibleShell = shellSelect.resolve({ priority: "compat" })
@@ -115,31 +119,19 @@ export const Plugin = {
         messageID: context.messageID,
         id: context.id,
       }
-      const target = yield* mutation.resolve({ path: invocation.cwd, kind: "directory" })
+      const target = yield* access.resolve({ path: invocation.cwd, kind: "directory" })
       invocation.cwd = target.absolute
       const timeout = invocation.timeout
       const portable = Config.latest(yield* config.entries(), "experimental")?.portable_shell_scanner === true
       const parsed = yield* ShellParse.scan(invocation.command, invocation.shell, target.absolute, { portable })
       const directories = yield* Effect.forEach(parsed.directories, (directory) =>
-        mutation.resolve({
-          path: LocationMutation.resolvePath(target.absolute, directory),
+        access.resolve({
+          path: FileAccess.resolvePath(target.absolute, directory),
           kind: "directory",
         }),
       )
-      const external = [target, ...directories]
-        .map((item) => item.externalDirectory)
-        .filter((item) => item !== undefined)
-        .filter((item, index, items) => items.findIndex((other) => other.resource === item.resource) === index)
-      if (external.length > 0)
-        yield* permission.assert({
-          action: "external_directory",
-          resources: external.map((item) => item.resource),
-          save: external.map((item) => item.save),
-          sessionID: context.sessionID,
-          agent: context.agent,
-          source,
-        })
-      const deletions = [...new Set(parsed.deletions)]
+      yield* access.authorizeExternal([target, ...directories], context)
+      const deletions = [...new Set(parsed.deletions ?? [])]
       if (deletions.length > 0)
         yield* permission.assert({
           action: "delete",
@@ -183,15 +175,15 @@ export const Plugin = {
         command: string,
         settled: Deferred.Deferred<Output>,
       ) {
-        const info = (yield* runtime.job.wait({ id })).info
+        const info = (yield* jobs.wait({ id })).info
         if (!info || info.status === "running") return
         const output = info.status === "completed" ? yield* Deferred.await(settled) : undefined
         const text = output
           ? resultMessages(output).join("\n\n")
           : info.status === "error"
             ? (info.error ?? "Command failed")
-            : "Command cancelled"
-        yield* runtime.session.synthetic({
+            : "Cancelled"
+        yield* sessions.synthetic({
           ...(info.notificationID ? { id: info.notificationID } : {}),
           sessionID,
           description: command,
@@ -204,14 +196,14 @@ export const Plugin = {
             output,
           }),
         })
-        if (info.notificationID) yield* runtime.job.completeBackground(info.notificationID)
+        if (info.notificationID) yield* jobs.completeBackground(info.notificationID)
       },
       Effect.forkIn(scope, { startImmediately: true }),
     )
 
     yield* ctx.tool
-      .transform((draft) =>
-        draft.add({
+      .transform((editor) =>
+        editor.add({
           name,
           options: { codemode: false },
           description: description(),
@@ -231,6 +223,10 @@ export const Plugin = {
                 },
                 (invocation) =>
                   Effect.gen(function* () {
+                    invocation.env.AGENT = "1"
+                    invocation.env.OPENCODE = "1"
+                    invocation.env.AI_AGENT ||= "opencode"
+                    invocation.env.OPENCODE_SESSION_ID = context.sessionID
                     finalTimeout = yield* prepare(invocation, context)
                   }),
                 { sessionID: context.sessionID, messageID: context.messageID, executionID: context.id, agent: context.agent },
@@ -254,7 +250,7 @@ export const Plugin = {
                 Effect.map((output) => resultMessages(output).join("\n\n")),
                 Effect.onInterrupt(() => shell.remove(info.id).pipe(Effect.ignore)),
               )
-              const job = yield* runtime.job.start({
+              const job = yield* jobs.start({
                 // CodeMode children share a tool-call ID, but each shell must own its job.
                 id: info.id,
                 type: name,
@@ -270,14 +266,14 @@ export const Plugin = {
               })
 
               if (input.background === true) {
-                yield* runtime.job.background(job.id)
+                yield* jobs.background(job.id)
                 yield* notifyWhenDone(context.sessionID, job.id, info.id, info.command, settled)
                 return backgroundResult(info.id, info.file)
               }
 
-              const result = yield* runtime.job
+              const result = yield* jobs
                 .block({ id: job.id, sessionID: context.sessionID })
-                .pipe(Effect.onInterrupt(() => runtime.job.cancel(job.id).pipe(Effect.ignore)))
+                .pipe(Effect.onInterrupt(() => jobs.cancel(job.id).pipe(Effect.ignore)))
               if (result?.type === "backgrounded") {
                 yield* shell.timeout(info.id, 0)
                 yield* notifyWhenDone(context.sessionID, job.id, info.id, info.command, settled)
@@ -298,12 +294,14 @@ export const Plugin = {
       )
       .pipe(Effect.orDie)
 
-    yield* ctx.session.hook("context", (event) =>
+    const hook = (event: SessionHooks["context"]) =>
       Effect.gen(function* () {
         const tool = event.tools[name]
         if (!tool) return
         tool.description = description(ShellSelect.name(yield* compatibleShell))
-      }),
-    )
+      })
+    yield* ctx.session.hook("context", hook)
+    yield* ctx.session.hook("compaction", hook)
+    yield* ctx.session.hook("generate", hook)
   }),
 }

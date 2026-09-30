@@ -1,10 +1,10 @@
 import { Component, Show, createMemo, createResource } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
-import { Button } from "@opencode-ai/ui/button"
-import { Select } from "@opencode-ai/ui/select"
-import { Switch } from "@opencode-ai/ui/switch"
-import { TextInput } from "@opencode-ai/ui/text-input"
-import type { ReasoningMode } from "@opencode-ai/session-ui/timeline/projection"
+import { Button } from "@opencode/ui/button"
+import { Select } from "@opencode/ui/select"
+import { Switch } from "@opencode/ui/switch"
+import { TextInput } from "@opencode/ui/text-input"
+import { TimelineDetailControl } from "@/settings/timeline-detail"
 import { useLanguage } from "@/runtime/i18n/language"
 import { usePlatform } from "@/runtime/platform/platform"
 import { useUpdaterAction } from "@/shell/updates/action"
@@ -21,14 +21,13 @@ import { SettingsRow } from "@/settings/row"
 import {
   createAppearanceSettingsController,
   createShellOptions,
-  createShellSettingsController,
   type AppearanceSettingsController,
   type ShellSettingsController,
 } from "./controllers"
 import "@/settings/settings.css"
-import { ServerConnection } from "@/runtime/server/registry"
 
 const schemeOptions: ("system" | "light" | "dark")[] = ["system", "light", "dark"]
+const tabLayoutOptions: ("horizontal" | "vertical")[] = ["horizontal", "vertical"]
 const fontSettings = {
   ui: {
     action: "settings-ui-font",
@@ -85,6 +84,7 @@ const WorkspaceDestinationSetting: Component = () => {
       description={language.t("settings.workspaces.default.description")}
     >
       <Select
+        data-action="settings-workspace-destination"
         options={options()}
         current={options().find((option) => option.value === settings.workspaces.defaultDestination())}
         value={(option) => option.value}
@@ -97,7 +97,7 @@ const WorkspaceDestinationSetting: Component = () => {
   )
 }
 
-const ShellSetting: Component<{ controller: ShellSettingsController }> = (props) => {
+export const ShellSetting: Component<{ controller: ShellSettingsController }> = (props) => {
   const language = useLanguage()
   const options = createMemo(() =>
     createShellOptions({
@@ -179,34 +179,6 @@ const FollowUpBehaviorSetting: Component = () => {
         placement="bottom-end"
         gutter={6}
         onSelect={(option) => option && settings.general.setFollowUpBehavior(option.value)}
-      />
-    </SettingsRow>
-  )
-}
-
-const ReasoningModeSetting: Component = () => {
-  const language = useLanguage()
-  const settings = useSettings()
-  const options = createMemo((): { value: ReasoningMode; label: string }[] => [
-    { value: "hidden", label: language.t("settings.general.row.reasoningMode.hidden") },
-    { value: "compact", label: language.t("settings.general.row.reasoningMode.compact") },
-    { value: "full", label: language.t("settings.general.row.reasoningMode.full") },
-  ])
-
-  return (
-    <SettingsRow
-      title={language.t("settings.general.row.reasoningMode.title")}
-      description={language.t("settings.general.row.reasoningMode.description")}
-    >
-      <Select
-        data-action="settings-reasoning-mode"
-        options={options()}
-        current={options().find((option) => option.value === settings.general.reasoningMode())}
-        value={(option) => option.value}
-        label={(option) => option.label}
-        placement="bottom-end"
-        gutter={6}
-        onSelect={(option) => option && settings.general.setReasoningMode(option.value)}
       />
     </SettingsRow>
   )
@@ -323,15 +295,38 @@ const LanguageSetting = () => {
   )
 }
 
-export const SettingsGeneral: Component<{
-  server?: ServerConnection.Any
-}> = (props) => {
+const TabLayoutSetting = () => {
+  const language = useLanguage()
+  const settings = useSettings()
+  return (
+    <SettingsRow
+      title={language.t("settings.appearance.row.tabs.title")}
+      description={language.t("settings.appearance.row.tabs.description")}
+    >
+      <Select
+        data-action="settings-tab-layout"
+        options={tabLayoutOptions}
+        current={tabLayoutOptions.find((option) => option === settings.appearance.tabLayout())}
+        aria-label={language.t("settings.appearance.row.tabs.title")}
+        placement="bottom-end"
+        gutter={6}
+        label={(option) =>
+          option === "horizontal"
+            ? language.t("settings.appearance.row.tabs.horizontal")
+            : language.t("settings.appearance.row.tabs.vertical")
+        }
+        onSelect={(option) => option && settings.appearance.setTabLayout(option)}
+      />
+    </SettingsRow>
+  )
+}
+
+export const SettingsGeneral: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
   const settings = useSettings()
   const mobile = createMediaQuery("(max-width: 767px)")
   const updater = useUpdaterAction()
-  const shell = createShellSettingsController(() => props.server)
   const desktop = createMemo(() => platform.platform === "desktop")
 
   const [pinchZoom, { mutate: setPinchZoom }] = createResource(
@@ -352,15 +347,36 @@ export const SettingsGeneral: Component<{
       <h3 class="settings-section-title">{language.t("settings.general.section.general")}</h3>
       <SettingsList>
         <LanguageSetting />
+        <TabLayoutSetting />
 
         <WorkspaceDestinationSetting />
         <AutoApprovePermissionsSetting />
 
-        <ShellSetting controller={shell} />
+        <SettingsRow
+          title={language.t("settings.general.row.showCustomAgents.title")}
+          description={language.t("settings.general.row.showCustomAgents.description")}
+        >
+          <div data-action="settings-show-custom-agents">
+            <Switch
+              checked={settings.general.showCustomAgents()}
+              onChange={(checked) => settings.general.setShowCustomAgents(checked)}
+            />
+          </div>
+        </SettingsRow>
+
         <TerminalPlacementSetting />
         <FollowUpBehaviorSetting />
 
-        <ReasoningModeSetting />
+        <Show when={desktop()}>
+          <SettingsRow
+            title={language.t("settings.general.row.pinchZoom.title")}
+            description={language.t("settings.general.row.pinchZoom.description")}
+          >
+            <div data-action="settings-pinch-zoom">
+              <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
+            </div>
+          </SettingsRow>
+        </Show>
 
         <SettingsRow
           title={language.t("session.review.wrapLines")}
@@ -378,45 +394,7 @@ export const SettingsGeneral: Component<{
           </div>
         </SettingsRow>
 
-        <SettingsRow
-          title={language.t("settings.general.row.shellToolPartsExpanded.title")}
-          description={language.t("settings.general.row.shellToolPartsExpanded.description")}
-        >
-          <div data-action="settings-feed-shell-tool-parts-expanded">
-            <Switch
-              checked={settings.general.shellToolPartsExpanded()}
-              onChange={(checked) => settings.general.setShellToolPartsExpanded(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.editToolPartsExpanded.title")}
-          description={language.t("settings.general.row.editToolPartsExpanded.description")}
-        >
-          <div data-action="settings-feed-edit-tool-parts-expanded">
-            <Switch
-              checked={settings.general.editToolPartsExpanded()}
-              onChange={(checked) => settings.general.setEditToolPartsExpanded(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <Show when={import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"}>
-          <SettingsRow
-            title={language.t("settings.general.row.showProjectIcon.title")}
-            description={language.t("settings.general.row.showProjectIcon.description")}
-          >
-            <div data-action="settings-show-project-icon">
-              <Switch
-                checked={settings.general.showProjectIcon()}
-                onChange={(checked) => settings.general.setShowProjectIcon(checked)}
-              />
-            </div>
-          </SettingsRow>
-        </Show>
-
-        <Show when={mobile() && import.meta.env.VITE_OPENCODE_CHANNEL !== "prod"}>
+        <Show when={mobile()}>
           <SettingsRow
             title={language.t("settings.general.row.mobileTitlebarBottom.title")}
             description={language.t("settings.general.row.mobileTitlebarBottom.description")}
@@ -429,50 +407,6 @@ export const SettingsGeneral: Component<{
             </div>
           </SettingsRow>
         </Show>
-      </SettingsList>
-    </div>
-  )
-
-  const AdvancedSection = () => (
-    <div class="settings-section">
-      <h3 class="settings-section-title">{language.t("settings.general.section.advanced")}</h3>
-
-      <SettingsList>
-        <SettingsRow
-          title={language.t("settings.general.row.showSearch.title")}
-          description={language.t("settings.general.row.showSearch.description")}
-        >
-          <div data-action="settings-show-search">
-            <Switch
-              checked={settings.general.showSearch()}
-              onChange={(checked) => settings.general.setShowSearch(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.showStatus.title")}
-          description={language.t("settings.general.row.showStatus.description")}
-        >
-          <div data-action="settings-show-status">
-            <Switch
-              checked={settings.general.showStatus()}
-              onChange={(checked) => settings.general.setShowStatus(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
-          title={language.t("settings.general.row.showCustomAgents.title")}
-          description={language.t("settings.general.row.showCustomAgents.description")}
-        >
-          <div data-action="settings-show-custom-agents">
-            <Switch
-              checked={settings.general.showCustomAgents()}
-              onChange={(checked) => settings.general.setShowCustomAgents(checked)}
-            />
-          </div>
-        </SettingsRow>
       </SettingsList>
     </div>
   )
@@ -542,32 +476,18 @@ export const SettingsGeneral: Component<{
           title={language.t("settings.updates.row.check.title")}
           description={language.t("settings.updates.row.check.description")}
         >
-          <Button size="normal" variant="neutral" disabled={!updater.action().run} onClick={() => updater.run()}>
+          <Button
+            data-action="settings-check-updates"
+            size="normal"
+            variant="neutral"
+            disabled={!updater.action().run}
+            onClick={() => updater.run()}
+          >
             {language.t(updater.action().label)}
           </Button>
         </SettingsRow>
       </SettingsList>
     </div>
-  )
-
-  // We can probably remove this, right?
-  const DisplaySection = () => (
-    <Show when={desktop()}>
-      <div class="settings-section">
-        <h3 class="settings-section-title">{language.t("settings.general.section.display")}</h3>
-
-        <SettingsList>
-          <SettingsRow
-            title={language.t("settings.general.row.pinchZoom.title")}
-            description={language.t("settings.general.row.pinchZoom.description")}
-          >
-            <div data-action="settings-pinch-zoom">
-              <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
-            </div>
-          </SettingsRow>
-        </SettingsList>
-      </div>
-    </Show>
   )
 
   return (
@@ -582,16 +502,24 @@ export const SettingsGeneral: Component<{
           </div>
         </div>
       </div>
-      <div class="settings-tab-body">
+      <div class="settings-tab-body settings-tab-body--sectioned">
         <GeneralSection />
+
+        <section class="settings-section" aria-label={language.t("settings.timeline.title")}>
+          <h3 class="settings-section-title">{language.t("settings.timeline.title")}</h3>
+          <SettingsList>
+            <div class="py-5">
+              <TimelineDetailControl
+                value={settings.general.timelineDetail()}
+                onChange={settings.general.setTimelineDetail}
+              />
+            </div>
+          </SettingsList>
+        </section>
 
         <Show when={desktop()}>
           <UpdatesSection />
         </Show>
-
-        <DisplaySection />
-
-        <AdvancedSection />
       </div>
     </>
   )

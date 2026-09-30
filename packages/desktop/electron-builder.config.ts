@@ -1,4 +1,5 @@
 import { execFile } from "node:child_process"
+import { stat } from "node:fs/promises"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
@@ -45,6 +46,7 @@ export function macSignOptions(options: CustomMacSignOptions): CustomMacSignOpti
 const channel = (() => {
   const raw = process.env.OPENCODE_CHANNEL
   if (raw === "dev" || raw === "beta" || raw === "prod") return raw
+  if (raw === "latest") return "prod"
   return "dev"
 })()
 
@@ -75,28 +77,41 @@ const getBase = (appId: string): Configuration => ({
     // Log export imports Zip.js as ESM. Keep index.js and lib, including its inline worker.
     "!**/node_modules/@zip.js/zip.js/dist{,/**/*}",
     "!**/node_modules/@zip.js/zip.js/{index.cjs,index.min.js,index-fflate.js,deno.json,eslint.config.mjs}",
-    // These packages execute compiled JavaScript, not their sources or source maps.
-    "!**/node_modules/{electron-updater,builder-util-runtime,lazy-val}/out/**/*.js.map",
+    // Nothing executes type declarations or source maps, and every entry costs startup time: the
+    // main process parses the whole asar header before it runs any JavaScript.
+    "!**/node_modules/**/*.d.{ts,cts,mts}",
+    "!**/node_modules/**/*.d.{ts,cts,mts}.map",
+    "!**/node_modules/**/*.{js,cjs,mjs}.map",
+    // These packages execute compiled JavaScript, not their sources.
     "!**/node_modules/ajv/lib{,/**/*}",
     "!**/node_modules/ajv-formats/src{,/**/*}",
-    "!**/node_modules/{ajv,ajv-formats}/dist/**/*.js.map",
     // Keep js-yaml's CommonJS sources and dist/js-yaml.mjs ESM entry, not browser bundles or its CLI.
     "!**/node_modules/js-yaml/dist/{js-yaml.js,js-yaml.min.js,*.map}",
     "!**/node_modules/js-yaml/bin{,/**/*}",
   ],
-  extraResources:
-    channel !== "prod"
-      ? [
-          {
-            from: "resources/",
-            to: "",
-            filter: ["opencode-cli*"],
-          },
-        ]
-      : [],
+  extraResources: [
+    {
+      from: "resources/",
+      to: "",
+      filter: ["opencode-cli", "opencode-cli.exe", "opencode-cli.version"],
+    },
+  ],
+  afterPack: async (context) => {
+    const cli = path.join(
+      context.packager.getResourcesDir(context.appOutDir),
+      context.electronPlatformName === "win32" ? "opencode-cli.exe" : "opencode-cli",
+    )
+    const file = await stat(cli)
+    if (!file.isFile() || file.size === 0) throw new Error(`Bundled CLI must be a non-empty file: ${cli}`)
+    const version = path.join(path.dirname(cli), "opencode-cli.version")
+    if ((await stat(version)).size === 0) throw new Error(`Bundled CLI version must be a non-empty file: ${version}`)
+  },
   mac: {
     category: "public.app-category.developer-tools",
     icon: `resources/icons/icon.icns`,
+    extendInfo: {
+      NSAutoFillRequiresTextContentTypeForOneTimeCodeOnMac: true,
+    },
     hardenedRuntime: true,
     gatekeeperAssess: false,
     entitlements: "resources/entitlements.plist",
@@ -107,9 +122,6 @@ const getBase = (appId: string): Configuration => ({
     },
     notarize: true,
     target: ["dmg", "zip"],
-  },
-  dmg: {
-    sign: true,
   },
   protocols: {
     name: "OpenCode",
@@ -124,6 +136,7 @@ const getBase = (appId: string): Configuration => ({
     verifyUpdateCodeSignature: false,
   },
   nsis: {
+    include: path.join(packageDir, "resources", "windows", "installer.nsh"),
     oneClick: true,
     perMachine: false,
     installerIcon: `resources/icons/icon.ico`,
@@ -164,7 +177,11 @@ function getConfig() {
         appId,
         productName: "OpenCode Beta",
         protocols: { name: "OpenCode Beta", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode-beta", channel: "latest" },
+        publish: {
+          provider: "generic",
+          url: "https://opencode.ai/update/api/beta/desktop/opencode/",
+          channel: "latest",
+        },
         deb: { fpm: [metainfoFpm(appId)] },
         rpm: { packageName: "opencode-beta", fpm: [metainfoFpm(appId)] },
       }
@@ -175,7 +192,11 @@ function getConfig() {
         appId,
         productName: "OpenCode",
         protocols: { name: "OpenCode", schemes: ["opencode"] },
-        publish: { provider: "github", owner: "anomalyco", repo: "opencode", channel: "latest" },
+        publish: {
+          provider: "generic",
+          url: "https://opencode.ai/update/api/latest/desktop/opencode/",
+          channel: "latest",
+        },
         deb: { fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
         rpm: { packageName: "opencode", fpm: [metainfoFpm(appId), legacyDesktopEntryFpm] },
       }

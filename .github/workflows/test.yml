@@ -49,7 +49,7 @@ jobs:
             echo "app=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          bun x turbo@2.10.2 ls --affected --filter=@opencode-ai/app --output=json > affected.json
+          bun x turbo@2.10.2 ls --affected --filter=@opencode/app --output=json > affected.json
           bun -e 'const result = await Bun.file("affected.json").json(); console.log(`app=${result.packages.count > 0}`)' >> "$GITHUB_OUTPUT"
 
   unit:
@@ -112,11 +112,12 @@ jobs:
       - name: Run unit tests
         timeout-minutes: 20
         run: |
+          # The runners have four vCPUs, and each Bun test process performs its own concurrent work.
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            GITHUB_ACTIONS=false bun turbo test
+            GITHUB_ACTIONS=false bun turbo test --concurrency=3
             exit 0
           fi
-          GITHUB_ACTIONS=false bun turbo test --affected
+          GITHUB_ACTIONS=false bun turbo test --affected --concurrency=3
         env:
           OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: ${{ runner.os == 'Windows' && 'true' || 'false' }}
           TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
@@ -132,10 +133,10 @@ jobs:
         timeout-minutes: 15
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            bun turbo verify:package --filter=@opencode-ai/sdk
+            bun turbo verify:package --filter=@opencode/sdk
             exit 0
           fi
-          bun turbo verify:package --affected --filter=@opencode-ai/sdk
+          bun turbo verify:package --affected --filter=@opencode/sdk
         env:
           TURBO_SCM_BASE: ${{ github.event_name == 'pull_request' && format('{0}^1', github.sha) || github.event.before }}
           TURBO_SCM_HEAD: ${{ github.sha }}
@@ -173,7 +174,7 @@ jobs:
 
       - name: Check generated documentation
         if: runner.os == 'Linux'
-        working-directory: packages/www
+        working-directory: services/www
         run: bun run check:generated
 
   e2e:

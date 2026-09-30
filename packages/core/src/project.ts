@@ -2,18 +2,17 @@ export * as Project from "./project.js"
 
 import { Context, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { and, asc, desc, eq, gte, isNull, lte } from "drizzle-orm"
+import { and, asc, desc, eq, gte, isNull, lte, sql } from "drizzle-orm"
 import path from "path"
 import { AbsolutePath } from "./schema.js"
 import { Bus } from "./bus.js"
 import { Database } from "./database/database.js"
-import { Worktree } from "@opencode-ai/schema/worktree"
-import { FSUtil } from "@opencode-ai/util/fs-util"
+import { Worktree } from "@opencode/schema/worktree"
+import { FSUtil } from "@opencode/util/fs-util"
 import { Git } from "./git.js"
-import { AppProcess } from "@opencode-ai/util/process"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import { Hash } from "@opencode-ai/util/hash"
-import { ProjectMarkers } from "./project/markers.js"
+import { AppProcess } from "@opencode/util/process"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Hash } from "@opencode/util/hash"
 import { ProjectSchema } from "./project/schema.js"
 import { ProjectTable, upsertProject } from "./project/sql.js"
 import { WorktreeTable } from "./worktree/sql.js"
@@ -44,7 +43,6 @@ export interface Resolved {
   // This checkout's main directory; the stored project canonical may be another clone.
   readonly canonical: AbsolutePath
   readonly vcs?: Vcs
-  readonly vcsBackend?: string
 }
 
 // Keep this filesystem-only; permission checks use it and should not execute VCS commands.
@@ -59,11 +57,15 @@ export const root = Effect.fn("Project.root")(function* (
   )
 })
 
+const ACTIVATE_INTERVAL = 60_000
+
 export interface Interface {
   readonly list: () => Effect.Effect<ReadonlyArray<Info>>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError>
+  /** Records Project activity for recency ordering, at most once per minute per Project. */
+  readonly activate: (projectID: ID) => Effect.Effect<void>
   /** Resolves and persists the owning Project. */
-  readonly resolve: (input: AbsolutePath, options?: { readonly discovery?: boolean }) => Effect.Effect<Resolved>
+  readonly resolve: (input: AbsolutePath) => Effect.Effect<Resolved>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/Project") {}
@@ -87,7 +89,7 @@ function fromRow(row: typeof ProjectTable.$inferSelect): Info {
     time: {
       created: row.time_created,
       updated: row.time_updated,
-      initialized: row.time_initialized ?? undefined,
+      active: row.time_active,
     },
     sandboxes: row.sandboxes,
   }
@@ -98,7 +100,6 @@ const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const git = yield* Git.Service
-    const markers = yield* ProjectMarkers.Service
     const proc = yield* AppProcess.Service
     const bus = yield* Bus.Service
     const db = (yield* Database.Service).db
@@ -172,7 +173,7 @@ const layer = Layer.effect(
               if (candidate.id === item.projectID) return false
               if (!FSUtil.contains(directory, candidate.directory)) return false
               const found = yield* fs
-                .up({ targets: [...markers.targets()], start: candidate.directory, stop: directory, mode: "first" })
+                .up({ targets: [".git", ".hg"], start: candidate.directory, stop: directory, mode: "first" })
                 .pipe(Effect.orElseSucceed(() => []))
               if (!found[0]) return false
               return (yield* fs.resolve(path.dirname(found[0]))) === directory
@@ -205,7 +206,7 @@ const layer = Layer.effect(
       const rows = yield* db
         .select()
         .from(ProjectTable)
-        .orderBy(desc(ProjectTable.time_updated), asc(ProjectTable.id))
+        .orderBy(desc(ProjectTable.time_active), asc(ProjectTable.id))
         .all()
         .pipe(Effect.orDie)
       return rows.map(fromRow)
@@ -215,6 +216,7 @@ const layer = Layer.effect(
       const row = yield* db
         .update(ProjectTable)
         .set({
+          worktree: input.canonical,
           name: input.name === undefined ? undefined : input.name || null,
           icon_url_override: input.icon?.override === undefined ? undefined : input.icon.override || null,
           icon_color: input.icon?.color === undefined ? undefined : input.icon.color || null,
@@ -234,6 +236,22 @@ const layer = Layer.effect(
       const project = fromRow(row)
       yield* bus.publish(ProjectSchema.Event.Updated, project)
       return project
+    })
+
+    const activated = new Map<ID, number>()
+    const activate = Effect.fn("Project.activate")(function* (projectID: ID) {
+      const now = Date.now()
+      if (now - (activated.get(projectID) ?? 0) < ACTIVATE_INTERVAL) return
+      activated.set(projectID, now)
+      const row = yield* db
+        .update(ProjectTable)
+        // Activity is not a metadata edit, so keep time_updated out of the implicit bump.
+        .set({ time_active: now, time_updated: sql`${ProjectTable.time_updated}` })
+        .where(eq(ProjectTable.id, projectID))
+        .returning()
+        .get()
+        .pipe(Effect.orDie)
+      if (row) yield* bus.publish(ProjectSchema.Event.Updated, fromRow(row))
     })
 
     const cached = Effect.fnUntraced(function* (dir: string) {
@@ -316,12 +334,8 @@ const layer = Layer.effect(
       }
     })
 
-    const resolve = Effect.fn("Project.resolve")(function* (
-      input: AbsolutePath,
-      options?: { readonly discovery?: boolean },
-    ) {
+    const resolve = Effect.fn("Project.resolve")(function* (input: AbsolutePath) {
       const directory = AbsolutePath.make(yield* fs.resolve(input))
-      const marker = yield* markers.discover(directory, options)
       const native = yield* fs.up({ targets: [".git", ".hg"], start: directory, mode: "first" }).pipe(
         Effect.map((matches) => matches[0]),
         Effect.orElseSucceed(() => undefined),
@@ -330,7 +344,7 @@ const layer = Layer.effect(
         native && path.basename(native) === ".git"
           ? yield* git.repo.discover(AbsolutePath.make(path.dirname(native)))
           : undefined
-      if (repo && (!marker || FSUtil.contains(marker.directory, repo.worktree))) {
+      if (repo) {
         const previous = yield* cached(repo.commonDirectory)
         const id = (yield* remote(repo)) ?? previous ?? (yield* rootCommit(repo))
         const canonical =
@@ -346,27 +360,14 @@ const layer = Layer.effect(
           directory: repo.worktree,
           canonical,
           vcs: { type: "git" as const, store: repo.commonDirectory },
-          ...(marker?.directory === repo.worktree && marker.type !== "git" ? { vcsBackend: marker.type } : {}),
         })
       }
 
       const hg = native && path.basename(native) === ".hg" ? yield* hgDiscover(AbsolutePath.make(native)) : undefined
-      if (hg && (!marker || FSUtil.contains(marker.directory, hg.directory))) {
+      if (hg) {
         return yield* persist({
           ...hg,
           canonical: hg.directory,
-          ...(marker?.directory === hg.directory && marker.type !== "hg" ? { vcsBackend: marker.type } : {}),
-        })
-      }
-
-      if (marker) {
-        const previous = yield* cached(marker.marker)
-        return yield* persist({
-          previous,
-          id: previous ?? ID.make(Hash.fast(`vcs-repository:${marker.type}:${marker.marker}`)),
-          directory: marker.directory,
-          canonical: marker.directory,
-          vcs: { type: marker.type, store: marker.marker },
         })
       }
 
@@ -378,12 +379,12 @@ const layer = Layer.effect(
       })
     })
 
-    return Service.of({ list, update, resolve })
+    return Service.of({ list, update, activate, resolve })
   }),
 )
 
 export const node = makeGlobalNode({
   service: Service,
   layer: layer,
-  deps: [Bus.node, Database.node, FSUtil.node, Git.node, ProjectMarkers.node, AppProcess.node],
+  deps: [Bus.node, Database.node, FSUtil.node, Git.node, AppProcess.node],
 })

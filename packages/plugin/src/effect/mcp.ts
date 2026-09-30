@@ -1,9 +1,9 @@
-import type { McpApi } from "@opencode-ai/client/effect/api"
-import type { Mcp } from "@opencode-ai/schema/mcp"
+import type { McpApi } from "@opencode/client/effect/api"
+import type { Mcp } from "@opencode/schema/mcp"
 import type { Effect, Types } from "effect"
 import type { Hooks, Transform } from "./registration.js"
 import type { ShellCreateBefore } from "./shell.js"
-import type { Tool } from "@opencode-ai/schema/tool"
+import type { Tool } from "@opencode/schema/tool"
 
 export interface MCPHooks {
   readonly "bridge.authorize": {
@@ -28,7 +28,7 @@ export interface MCPHooks {
 
 export interface MCPFailures { readonly "bridge.authorize": Tool.Error; readonly "bridge.validate": Tool.Error; readonly "bridge.catalog": Tool.Error }
 
-export interface MCPDraft {
+export interface MCPEditor {
   list(): readonly [string, Types.DeepMutable<Mcp.ServerConfig>][]
   get(name: string): Types.DeepMutable<Mcp.ServerConfig> | undefined
   set(name: string, config: Mcp.ServerConfig): void
@@ -38,6 +38,6 @@ export interface MCPDraft {
 
 export interface MCPDomain extends Pick<McpApi<unknown>, "list"> {
   readonly hook: Hooks<MCPHooks, MCPFailures>
-  readonly transform: Transform<MCPDraft>
+  readonly transform: Transform<MCPEditor>
   readonly reload: () => Effect.Effect<void>
 }

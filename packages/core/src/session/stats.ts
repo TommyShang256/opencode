@@ -2,12 +2,14 @@ export * as SessionStats from "./stats.js"
 
 import { DateTime, Effect, Option, Schema } from "effect"
 import { and, eq, gte, inArray, lt, sql } from "drizzle-orm"
-import { Model } from "@opencode-ai/schema/model"
-import { Money } from "@opencode-ai/schema/money"
-import { Project } from "@opencode-ai/schema/project"
-import { Provider } from "@opencode-ai/schema/provider"
-import { SessionEvent } from "@opencode-ai/schema/session-event"
-import { ToolMode } from "@opencode-ai/schema/session-stats"
+import { Model } from "@opencode/schema/model"
+import { Money } from "@opencode/schema/money"
+import { Project } from "@opencode/schema/project"
+import { Provider } from "@opencode/schema/provider"
+import { Event } from "@opencode/schema/event"
+import { SessionEvent } from "@opencode/schema/session-event"
+import { ToolMode } from "@opencode/schema/session-stats"
+import { TokenUsage } from "@opencode/schema/token-usage"
 import { Database } from "../database/database.js"
 import { EventTable } from "../event/sql.js"
 import { SessionMessageTable, SessionTable } from "./sql.js"
@@ -292,7 +294,10 @@ export const get = Effect.fn("SessionStats.get")(function* (input: Input = {}) {
         .where(
           and(
             inArray(EventTable.aggregate_id, batch),
-            eq(EventTable.type, SessionEvent.UsageRecorded.type),
+            eq(
+              EventTable.type,
+              Event.versionedType(SessionEvent.UsageRecorded.type, SessionEvent.UsageRecorded.durable.version),
+            ),
             sql`json_extract(${EventTable.data}, '$.source') = 'compaction'`,
             gte(EventTable.created, from),
             lt(EventTable.created, to),
@@ -341,7 +346,7 @@ export const get = Effect.fn("SessionStats.get")(function* (input: Input = {}) {
     streak: longestStreak(days.map(([date]) => date)),
     activity: days.map(([date, steps]) => ({ date, steps })),
     models: [...models.values()]
-      .sort((a, b) => tokenTotal(b.tokens) - tokenTotal(a.tokens))
+      .sort((a, b) => TokenUsage.total(b.tokens) - TokenUsage.total(a.tokens))
       .map((model) => ({ ...model, cost: Money.USD.make(model.cost) })),
   }
 })
@@ -376,10 +381,6 @@ function addTokens(target: Tokens, source: Tokens) {
   target.reasoning += source.reasoning
   target.cache.read += source.cache.read
   target.cache.write += source.cache.write
-}
-
-function tokenTotal(tokens: Tokens) {
-  return tokens.input + tokens.output + tokens.reasoning + tokens.cache.read + tokens.cache.write
 }
 
 function addToolStatus(

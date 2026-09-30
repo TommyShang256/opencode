@@ -1,14 +1,15 @@
 export * as VcsGitPlugin from "./git.js"
 
-import { define } from "@opencode-ai/plugin/effect/plugin"
+import { define } from "@opencode/plugin/effect/plugin"
 import { Effect } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { FileDiff } from "@opencode-ai/schema/file-diff"
-import { Base, BranchList, FileStatus, Info, Mode } from "@opencode-ai/schema/vcs"
-import { AppProcess } from "@opencode-ai/util/process"
+import { FileDiff } from "@opencode/schema/file-diff"
+import { Base, BranchList, FileStatus, Info, Mode } from "@opencode/schema/vcs"
+import { AppProcess } from "@opencode/util/process"
 import { Location } from "../../location.js"
 import type { Adapter, BranchOptions, DiffOptions } from "../../vcs.js"
 import { DiffError } from "../../vcs.js"
+import { gitExecutable } from "../../util/git-executable.js"
 import {
   chunksByFile,
   emptyPatch,
@@ -20,7 +21,6 @@ import type { Patch } from "../../vcs/patch.js"
 
 export const Plugin = define({
   id: "opencode.vcs.git",
-  vcs: { id: "git", markers: [".git"] },
   effect: Effect.fn("VcsGitPlugin")(function* (ctx) {
     const location = yield* Location.Service
     if (location.vcs?.type !== "git") return
@@ -31,8 +31,8 @@ export const Plugin = define({
       worktree: location.project.directory,
     })
 
-    yield* ctx.vcs.transform((draft) => {
-      draft.add({
+    yield* ctx.vcs.transform((editor) => {
+      editor.add({
         id: "git",
         name: "Git",
         info: () => adapter.info(),
@@ -169,7 +169,7 @@ function makeGit(proc: AppProcess.Interface) {
   const run = Effect.fnUntraced(
     function* (args: string[], opts: { cwd: string; maxOutputBytes?: number }) {
       const result = yield* proc.run(
-        ChildProcess.make("git", [...cfg, ...args], {
+        ChildProcess.make(gitExecutable, [...cfg, ...args], {
           cwd: opts.cwd,
           extendEnv: true,
           stdin: "ignore",

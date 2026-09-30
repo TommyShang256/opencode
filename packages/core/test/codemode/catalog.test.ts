@@ -1,26 +1,27 @@
 import { describe, expect, test } from "bun:test"
-import { CodeModeCatalog } from "@opencode-ai/core/codemode/catalog"
-import { CodeModeInstructions } from "@opencode-ai/core/codemode/instructions"
+import { CodeModeCatalog } from "@opencode/core/codemode/catalog"
+import { CodeModeInstructions } from "@opencode/core/codemode/instructions"
 
 const entry = (path: string, description: string, signature?: string, pinned = false): CodeModeCatalog.Tool => ({
-  path,
+  type: "tool",
+  name: path,
   description,
-  signature: signature ?? `tools.${path}(input: {\n  q: string,\n}): Promise<string>`,
+  signature: signature ?? `tools.${path}({\n  q: string,\n}): Promise<string>`,
   pinned,
 })
 
 const lookup = entry(
   "orders.lookup",
   "Look up an order by ID",
-  "tools.orders.lookup(input: {\n  id: string,\n}): Promise<{\n  id: string,\n  status: string,\n}>",
+  "tools.orders.lookup({\n  id: string,\n}): Promise<{\n  id: string,\n  status: string,\n}>",
 )
 
-const render = (tools: ReadonlyArray<CodeModeCatalog.Tool>, budget?: number) =>
+const render = (tools: CodeModeCatalog.Inventory["tools"], budget?: number) =>
   CodeModeInstructions.render(CodeModeCatalog.summarize({ tools }, budget === undefined ? {} : { budget }))
 
 const update = (
-  previous: ReadonlyArray<CodeModeCatalog.Tool>,
-  current: ReadonlyArray<CodeModeCatalog.Tool>,
+  previous: CodeModeCatalog.Inventory["tools"],
+  current: CodeModeCatalog.Inventory["tools"],
   budget?: number,
 ) =>
   CodeModeInstructions.update(
@@ -103,10 +104,10 @@ describe("CodeModeCatalog.summarize", () => {
     const listingCost = Math.round(`  - ${tool.signature} // One`.length / 4)
     const namespaceCost = Math.round(CodeModeCatalog.namespaceLine({ name: "alpha", count: 1, entries: [] }).length / 4)
     const description = "A namespace description that stays visible beyond the available tool budget"
-    const namespaces = new Map([["alpha", { name: "alpha", description }]])
+    const namespace = { type: "namespace" as const, name: "alpha", description, tools: [tool] }
 
     expect(CodeModeCatalog.summarize({ tools: [tool] }, { budget: namespaceCost + listingCost }).shown).toBe(1)
-    const catalog = CodeModeCatalog.summarize({ tools: [tool], namespaces }, { budget: namespaceCost + listingCost })
+    const catalog = CodeModeCatalog.summarize({ tools: [namespace] }, { budget: namespaceCost + listingCost })
     expect(catalog.shown).toBe(0)
     expect(catalog.namespaces[0]?.description).toBe(description)
     expect(CodeModeInstructions.render(catalog)).toContain(`- alpha (1 tool, none shown) // ${description}`)
@@ -119,25 +120,22 @@ describe("CodeModeInstructions.render", () => {
     expect(instructions).toContain("## Available tools")
     expect(instructions).toContain("- orders (1 tool)")
     expect(instructions).toContain(`  - ${lookup.signature} // Look up an order by ID`)
-    expect(instructions).not.toContain("## Search")
-    expect(instructions).toContain("The Code Mode tool catalog below is complete.")
-    expect(instructions).toContain("This catalog is the complete set of tools available within Code Mode.")
-    expect(instructions).not.toContain("surrounding top-level agent tools")
+    expect(instructions).not.toContain("search")
+    expect(instructions).toContain("They cannot be called directly. They only work inside code you pass to `execute`.")
+    expect(instructions).toContain("The catalog is complete. Do not guess tool names.")
   })
 
   test("adds search guidance when the catalog exceeds the budget", () => {
     const partial = render([lookup], 0)
     expect(partial).toContain("## Available tools")
     expect(partial).toContain("- orders (1 tool, none shown)")
-    expect(partial).toContain("## Search")
-    expect(partial).toContain("The Code Mode tool catalog below is partial.")
+    expect(partial).toContain("They cannot be called directly, and neither can `search`.")
     expect(partial).toContain(
-      "The Code Mode catalog and `search` results are the complete set of tools available within Code Mode.",
+      "The catalog is partial. Inside `execute`, use `search(...)` to find a tool, then call it by the `path` in the result. `search` is synchronous. Call it without `await`; it does not return a Promise.",
     )
-    expect(partial).not.toContain("surrounding top-level agent tools")
-    expect(partial).toContain("- search(input: {")
-    expect(partial).toContain("  /**\n   * @integer\n   * @exclusiveMinimum 0\n   */\n  limit?: number,")
-    expect(partial).toContain("  /**\n   * @integer\n   * @minimum 0\n   */\n  offset?: number,")
+    expect(partial).toContain("- search({")
+    expect(partial).toContain("  /** @integer @exclusiveMinimum 0 */\n  limit?: number,")
+    expect(partial).toContain("  /** @integer @minimum 0 */\n  offset?: number,")
     expect(partial).not.toContain("tools.orders.lookup(input:")
   })
 
@@ -147,7 +145,7 @@ describe("CodeModeInstructions.render", () => {
     const expensive = entry(
       "alpha.expensive",
       "Expensive",
-      `tools.alpha.expensive(input: {\n  aVeryLongParameterName: string,\n  anotherEvenLongerParameterName: number,\n  yetAnotherExtremelyVerboseParameterName: string,\n}): Promise<string>`,
+      `tools.alpha.expensive({\n  aVeryLongParameterName: string,\n  anotherEvenLongerParameterName: number,\n  yetAnotherExtremelyVerboseParameterName: string,\n}): Promise<string>`,
     )
     // Round 1 places alpha.cheap and beta.cheap; in round 2 alpha.expensive does not fit,
     // which marks only alpha done - it must NOT prevent other namespaces from inlining.
@@ -156,7 +154,7 @@ describe("CodeModeInstructions.render", () => {
       { name: "beta", count: 1, entries: [] },
     ].reduce((total, namespace) => total + Math.round(CodeModeCatalog.namespaceLine(namespace).length / 4), 0)
     const instructions = render([cheapAlpha, expensive, cheapBeta], 40 + namespaceCost)
-    expect(instructions).toContain("## Search")
+    expect(instructions).toContain("The catalog is partial.")
     expect(instructions).toContain("- alpha (2 tools, 1 shown)")
     expect(instructions).toContain(`  - ${cheapAlpha.signature} // Cheap`)
     expect(instructions).not.toContain("tools.alpha.expensive(")
@@ -168,7 +166,7 @@ describe("CodeModeInstructions.render", () => {
     const documented = entry(
       "records.lookup",
       "Look up a record",
-      `tools.records.lookup(input: {\n  /** ${"A detailed identifier description. ".repeat(20).trim()} */\n  id: string,\n}): Promise<string>`,
+      `tools.records.lookup({\n  /** ${"A detailed identifier description. ".repeat(20).trim()} */\n  id: string,\n}): Promise<string>`,
     )
     const instructions = render([documented], 40)
     expect(instructions).toContain("- records (1 tool, none shown)")
@@ -186,7 +184,7 @@ describe("CodeModeInstructions.update", () => {
   const echo = entry("notes.echo", "Echo text")
 
   test("renders additions, changes, and removals as a compact semantic delta", () => {
-    const changed = { ...echo, signature: "tools.notes.echo(input: {\n  text: string,\n}): Promise<string>" }
+    const changed = { ...echo, signature: "tools.notes.echo({\n  text: string,\n}): Promise<string>" }
     const added = entry("notes.list", "List notes")
     const unchanged = Array.from({ length: 5 }, (_, index) => entry(`stable.tool${index}`, `Stable ${index}`))
     const text = update([echo, lookup, ...unchanged], [changed, added, ...unchanged])
@@ -209,12 +207,10 @@ describe("CodeModeInstructions.update", () => {
 
   test("restates namespace descriptions when they change", () => {
     const previous = CodeModeCatalog.summarize({
-      tools: [echo],
-      namespaces: new Map([["notes", { name: "notes", description: "Old description" }]]),
+      tools: [{ type: "namespace", name: "notes", description: "Old description", tools: [echo] }],
     })
     const current = CodeModeCatalog.summarize({
-      tools: [echo],
-      namespaces: new Map([["notes", { name: "notes", description: "New description" }]]),
+      tools: [{ type: "namespace", name: "notes", description: "New description", tools: [echo] }],
     })
     const text = CodeModeInstructions.update(previous, current)
     expect(text).toContain("This catalog supersedes the previous Code Mode tool catalog.")
@@ -228,7 +224,7 @@ describe("CodeModeInstructions.update", () => {
     expect(text).toContain(
       "The Code Mode tool catalog has changed. This catalog supersedes the previous Code Mode tool catalog.",
     )
-    expect(text).toContain("## Search")
+    expect(text).toContain("The catalog is partial.")
     expect(text).toContain("## Available tools")
   })
 
@@ -237,7 +233,7 @@ describe("CodeModeInstructions.update", () => {
     const text = update([...previous, echo], [echo])
     expect(text).toContain("This catalog supersedes the previous Code Mode tool catalog.")
     expect(text).toContain("## Available tools")
-    expect(text).not.toContain("## Search")
+    expect(text).toContain("The catalog is complete.")
     expect(text).not.toContain("The following tools are no longer available")
   })
 

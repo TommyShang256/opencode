@@ -1,17 +1,17 @@
-import { Agent } from "@opencode-ai/core/agent"
-import { Location } from "@opencode-ai/core/location"
-import { Mcp } from "@opencode-ai/core/mcp/index"
-import { Permission } from "@opencode-ai/core/permission"
-import { Session } from "@opencode-ai/core/session"
-import { McpTool } from "@opencode-ai/core/tool/mcp"
-import { ShellContext } from "@opencode-ai/core/shell/context"
-import { PluginHooks } from "@opencode-ai/core/plugin/hooks"
+import { Agent } from "@opencode/core/agent"
+import { Location } from "@opencode/core/location"
+import { Mcp } from "@opencode/core/mcp/index"
+import { Permission } from "@opencode/core/permission"
+import { Session } from "@opencode/core/session"
+import { McpTool } from "@opencode/core/tool/mcp"
+import { ShellContext } from "@opencode/core/shell/context"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
 import {
   McpServerNotFoundError,
   PermissionDeniedError,
   ServiceUnavailableError,
   SessionNotFoundError,
-} from "@opencode-ai/protocol/errors"
+} from "@opencode/protocol/errors"
 import { Cause, Effect, SynchronizedRef } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { HttpServerRequest } from "effect/unstable/http"

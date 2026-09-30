@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { ConfigProvider, Effect } from "effect"
 import { HttpClientRequest } from "effect/unstable/http"
-import { LLM, LLMEvent, Message, ToolDefinition } from "../../src/index.js"
+import { LLM, LLMEvent, Message, ToolDefinition, Media } from "../../src/index.js"
 import { Mistral } from "../../src/providers/index.js"
 import { MistralChat } from "../../src/protocols/index.js"
 import { LLMClient } from "../../src/route.js"
@@ -19,7 +19,7 @@ const chunk = (delta: object, finishReason: string | null = null, usage?: object
 
 describe("Mistral Chat", () => {
   test("exposes native provider and protocol identities", async () => {
-    const entrypoint = await import("@opencode-ai/ai/providers/mistral")
+    const entrypoint = await import("@opencode/ai/providers/mistral")
 
     expect(Mistral.id).toBe("mistral")
     expect(MistralChat.protocol.id).toBe("mistral-chat")
@@ -46,8 +46,8 @@ describe("Mistral Chat", () => {
             Message.system("Updated"),
             Message.user([
               { type: "text", text: "Inspect" },
-              { type: "media", mediaType: "image/png", data: "aW1hZ2U=" },
-              { type: "media", mediaType: "application/pdf", data: "cGRm" },
+              { type: "media", media: Media.base64("aW1hZ2U=", "image/png") },
+              { type: "media", media: Media.base64("cGRm", "application/pdf") },
             ]),
             Message.assistant([
               { type: "reasoning", text: "Think" },
@@ -59,7 +59,7 @@ describe("Mistral Chat", () => {
           ],
           tools: [
             ToolDefinition.make({ name: "lookup", description: "Look up a city", inputSchema: { type: "object" } }),
-            ToolDefinition.make({ name: "other", description: "Other operation", inputSchema: { type: "object" } }),
+            ToolDefinition.make({ name: "other", description: "Other operation", inputSchema: {} }),
           ],
           toolChoice: "lookup",
           promptCacheKey: "session-1",
@@ -84,7 +84,10 @@ describe("Mistral Chat", () => {
 
       expect(prepared.body).toMatchObject({
         model: "mistral-large-latest",
-        tools: [{ function: { name: "lookup", strict: false } }, { function: { name: "other", strict: false } }],
+        tools: [
+          { function: { name: "lookup", strict: false } },
+          { function: { name: "other", strict: false, parameters: { type: "object" } } },
+        ],
         tool_choice: { type: "function", function: { name: "lookup" } },
         stream: true,
         max_tokens: 64,
@@ -230,8 +233,7 @@ describe("Mistral Chat", () => {
           messages: [
             Message.user({
               type: "media",
-              mediaType: "image/png",
-              data: "https://assets.example.test/input.png",
+              media: Media.url("https://assets.example.test/input.png", { mediaType: "image/png" }),
             }),
             Message.tool({
               id: "Ab12Cd34E",
@@ -301,7 +303,8 @@ describe("Mistral Chat", () => {
           fixedResponse(
             sseEvents(
               chunk({ content: [{ type: "thinking", thinking: [], marker: "empty" }] }),
-              chunk({ content: [{ type: "thinking", thinking: [{ type: "text", text: "Consider" }] }] }),
+              chunk({ content: [{ type: "thinking", thinking: [{ type: "text", text: "Con" }] }] }),
+              chunk({ content: [{ type: "thinking", thinking: [{ type: "text", text: "sider" }], closed: true }] }),
               chunk({ content: [{ type: "text", text: "Answer" }] }),
               chunk({}, "stop"),
             ),
@@ -311,6 +314,11 @@ describe("Mistral Chat", () => {
 
       expect(response.reasoning).toBe("Consider")
       expect(response.text).toBe("Answer")
+      expect(response.events.find(LLMEvent.is.reasoningStart)?.providerMetadata).toBeUndefined()
+      expect(response.events.filter(LLMEvent.is.reasoningDelta).map((event) => [event.text, event.providerMetadata])).toEqual([
+        ["Con", undefined],
+        ["sider", undefined],
+      ])
       expect(response.message.content).toEqual([
         {
           type: "reasoning",
@@ -319,8 +327,12 @@ describe("Mistral Chat", () => {
             mistral: {
               thinking: {
                 type: "thinking",
-                thinking: [{ type: "text", text: "Consider" }],
+                thinking: [
+                  { type: "text", text: "Con" },
+                  { type: "text", text: "sider" },
+                ],
                 marker: "empty",
+                closed: true,
               },
             },
           },
@@ -335,8 +347,12 @@ describe("Mistral Chat", () => {
           content: [
             {
               type: "thinking",
-              thinking: [{ type: "text", text: "Consider" }],
+              thinking: [
+                { type: "text", text: "Con" },
+                { type: "text", text: "sider" },
+              ],
               marker: "empty",
+              closed: true,
             },
             { type: "text", text: "Answer" },
           ],
@@ -355,6 +371,8 @@ describe("Mistral Chat", () => {
           ),
         ),
       )
+      expect(response.events.find(LLMEvent.is.reasoningStart)?.providerMetadata).toBeUndefined()
+      expect(response.events.filter(LLMEvent.is.reasoningDelta)).toEqual([])
       expect(response.message.content).toEqual([
         {
           type: "reasoning",
@@ -600,13 +618,28 @@ describe("Mistral Chat", () => {
         ["stop", "stop"],
         ["model_length", "length"],
         ["tool_calls", "tool-calls"],
-        ["error", "error"],
         ["future_reason", "unknown"],
       ] as const) {
         const response = yield* LLMClient.generate(request).pipe(
           Effect.provide(fixedResponse(sseEvents(chunk({}, raw)))),
         )
         expect(response.finishReason).toEqual({ normalized, raw })
+      }
+
+      for (const [raw, tag] of [
+        ["error", "UnknownProvider"],
+        ["network_error", "ProviderInternal"],
+      ] as const) {
+        const event = { ...chunk({}, raw), diagnostics: { trace: "failure" } }
+        const error = yield* LLMClient.generate(request).pipe(
+          Effect.provide(fixedResponse(sseEvents(event))),
+          Effect.flip,
+        )
+        expect(error).toMatchObject({
+          _tag: "AI.Error",
+          reason: { _tag: tag, body: JSON.stringify(event), http: { status: 200 } },
+          message: `Mistral Chat stopped with ${raw}`,
+        })
       }
 
       const truncated = yield* LLMClient.generate(request).pipe(

@@ -1,5 +1,5 @@
-import type { Data } from "@opencode-ai/client/solid"
-import type { SessionMessageUser } from "@opencode-ai/client/promise"
+import type { Data } from "@opencode/client/solid"
+import type { SessionMessageUser } from "@opencode/client/promise"
 import type { Accessor } from "solid-js"
 import type { ModelSelection } from "@/providers/models/selection"
 import type { ServerSDK } from "@/runtime/server/client"
@@ -47,6 +47,7 @@ export type ComposerDelivery = "steer" | "queue"
 // is loaded in the editor.
 export type ComposerQueue = {
   count: Accessor<number>
+  undoing: Accessor<boolean>
   // Delivery a plain submit uses right now.
   delivery: Accessor<ComposerDelivery>
   // Delivery offered on Mod+Enter and the toolbar hint button; undefined hides the hint.

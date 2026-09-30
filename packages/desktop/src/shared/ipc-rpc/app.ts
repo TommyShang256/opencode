@@ -3,7 +3,10 @@ import { Rpc, RpcGroup } from "effect/unstable/rpc"
 
 const ServerReadyData = Schema.Struct({
   url: Schema.String,
-  password: Schema.NullOr(Schema.String),
+})
+
+export const PairingInfo = Schema.Struct({
+  urls: Schema.Array(Schema.String),
 })
 
 export const AppAwaitInitialization = Rpc.make("AppAwaitInitialization", { success: ServerReadyData })
@@ -54,6 +57,13 @@ export const AppSetNativeTranslations = Rpc.make("AppSetNativeTranslations", {
   payload: { value: Schema.Unknown },
 })
 export const AppRelaunch = Rpc.make("AppRelaunch")
+export const AppPairInfo = Rpc.make("AppPairInfo", { success: PairingInfo, error: Schema.String })
+export const AppPairCode = Rpc.make("AppPairCode", { success: Schema.String, error: Schema.String })
+export const AppGetKeepScreenActive = Rpc.make("AppGetKeepScreenActive", { success: Schema.Boolean })
+export const AppSetKeepScreenActive = Rpc.make("AppSetKeepScreenActive", {
+  payload: { enabled: Schema.Boolean },
+  error: Schema.String,
+})
 export const AppRpcs = RpcGroup.make(
   AppAwaitInitialization,
   AppReconnectService,
@@ -70,4 +80,8 @@ export const AppRpcs = RpcGroup.make(
   AppRecordFatalRendererError,
   AppSetNativeTranslations,
   AppRelaunch,
+  AppPairInfo,
+  AppPairCode,
+  AppGetKeepScreenActive,
+  AppSetKeepScreenActive,
 )

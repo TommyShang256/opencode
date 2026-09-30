@@ -3,16 +3,17 @@ import { createStore } from "solid-js/store"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createResizeObserver } from "@solid-primitives/resize-observer"
 import { createMutation } from "@tanstack/solid-query"
-import { IconButton } from "@opencode-ai/ui/icon-button"
-import { Icon } from "@opencode-ai/ui/icon"
-import { Menu } from "@opencode-ai/ui/menu"
+import { IconButton } from "@opencode/ui/icon-button"
+import { Icon } from "@opencode/ui/icon"
+import { Menu } from "@opencode/ui/menu"
 import { useGlobal, useServerCtx } from "@/runtime/server/runtime"
 import { useLanguage } from "@/runtime/i18n/language"
 import { ServerConnection, serverName, useServers } from "@/runtime/server/registry"
-import { displayName, projectForSession } from "@/shell/layout/helpers"
+import { displayName } from "@/shell/layout/helpers"
 import { SessionTabAvatar } from "@/shell/layout/session-tab-avatar"
-import type { SessionInfo } from "@opencode-ai/client/promise"
-import { sessionLabel } from "@/session/title"
+import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-progress-indicator-v2"
+import type { SessionInfo } from "@opencode/client/promise"
+import { sessionTabTitle } from "./tab-title"
 import { canOpenTabRename, forwardTabRef } from "./tab-gesture"
 import { TabPreviewPopover } from "./tab-popover"
 import "./tab-nav.css"
@@ -25,6 +26,7 @@ export function TabNavItem(props: {
   href: string
   server: ServerConnection.Key
   session: SessionInfo | undefined
+  preparing: boolean
   fallbackTitle?: string
   onRename: (title: string) => Promise<void>
   onClose: () => void
@@ -55,11 +57,11 @@ export function TabNavItem(props: {
   const project = createMemo(() => {
     const session = props.session
     if (!session) return
-    return projectForSession(session, serverCtx()?.projects.list() ?? [])
+    return serverCtx()?.projects.forSession(session)
   })
   const title = createMemo(() => {
     const session = props.session
-    return session ? sessionLabel(session) : props.fallbackTitle
+    return sessionTabTitle(session ? session.title : props.fallbackTitle, language.t("session.tab.session"))
   })
 
   const projectName = createMemo(() => {
@@ -239,7 +241,14 @@ export function TabNavItem(props: {
             when={props.session}
             keyed
             fallback={
-              <span class="block size-4 rounded-[3px] border border-v2-border-border-muted" aria-hidden="true" />
+              <Show
+                when={props.preparing}
+                fallback={
+                  <span class="block size-4 rounded-[3px] border border-v2-border-border-muted" aria-hidden="true" />
+                }
+              >
+                <SessionProgressIndicatorV2 />
+              </Show>
             }
           >
             {(session) => (
@@ -289,13 +298,6 @@ export function TabNavItem(props: {
             event.preventDefault()
           }}
         />
-        <Show when={props.orientation === "vertical" && projectName()}>
-          {(name) => (
-            <span data-slot="tab-project" dir="auto">
-              {name()}
-            </span>
-          )}
-        </Show>
       </Menu.Context.Trigger>
 
       <div data-slot="tab-close">
@@ -317,6 +319,7 @@ export function TabNavItem(props: {
 
   return (
     <Menu.Context
+      modal={false}
       onOpenChange={(open) => {
         setMenu("open", open)
         if (open) setPopoverOpen(false)
@@ -421,7 +424,20 @@ export function DraftTabItem(props: {
         class="flex h-full min-w-0 flex-1 flex-row items-center gap-1.5 text-[13px] font-medium text-v2-text-text-faint group-data-[active='true']:text-v2-text-text-base [-webkit-user-drag:none]"
       >
         <span class="flex size-4 shrink-0 items-center justify-center">
-          <Icon name="edit" />
+          <svg
+            class="text-v2-icon-icon-muted group-data-[active='true']:text-v2-icon-icon-base"
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M9.00002 13.5H14M2.60419 10.9167V13.3958H5.08335L13.3959 5.08333L10.9167 2.60416L2.60419 10.9167Z"
+              stroke="currentColor"
+            />
+          </svg>
         </span>
         <span
           data-titlebar-tab-title

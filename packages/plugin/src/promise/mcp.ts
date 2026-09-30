@@ -1,6 +1,7 @@
-import type { McpApi } from "@opencode-ai/client/promise/api"
-import type { Mcp } from "@opencode-ai/schema/mcp"
-import type { Hooks, Transform } from "./registration.js"
+import type { McpApi } from "@opencode/client/promise/api"
+import type { Mcp } from "@opencode/schema/mcp"
+import type { Transform } from "./registration.js"
+import type { Hooks } from "./registration.js"
 import type { ShellCreateBefore } from "./shell.js"
 
 export interface MCPHooks {
@@ -25,7 +26,7 @@ export interface MCPHooks {
 }
 import type { DeepMutable } from "./types.js"
 
-export interface MCPDraft {
+export interface MCPEditor {
   list(): readonly [string, DeepMutable<Mcp.ServerConfig>][]
   get(name: string): DeepMutable<Mcp.ServerConfig> | undefined
   set(name: string, config: Mcp.ServerConfig): void
@@ -35,6 +36,6 @@ export interface MCPDraft {
 
 export interface MCPDomain extends Pick<McpApi, "list"> {
   readonly hook: Hooks<MCPHooks>
-  readonly transform: Transform<MCPDraft>
+  readonly transform: Transform<MCPEditor>
   readonly reload: () => Promise<void>
 }

@@ -1,18 +1,9 @@
-import { Catalog } from "@opencode-ai/core/catalog"
-import { ProviderNotFoundError, ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { Provider } from "@opencode/core/provider"
+import { ProviderNotFoundError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { response } from "../location"
-import { pluginReadiness } from "./plugin-readiness"
-
-const flushPlugins = pluginReadiness(
-  () =>
-    new ServiceUnavailableError({
-      message: "Provider catalog initialization timed out",
-      service: "provider.catalog",
-    }),
-)
 
 export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (handlers) =>
   Effect.gen(function* () {
@@ -20,17 +11,15 @@ export const ProviderHandler = HttpApiBuilder.group(Api, "server.provider", (han
       .handle(
         "provider.list",
         Effect.fn(function* () {
-          yield* flushPlugins
-          const catalog = yield* Catalog.Service
-          return yield* response(catalog.provider.available())
+          const providers = yield* Provider.Service
+          return yield* response(providers.available())
         }),
       )
       .handle(
         "provider.get",
         Effect.fn(function* (ctx) {
-          yield* flushPlugins
-          const catalog = yield* Catalog.Service
-          const provider = yield* catalog.provider.get(ctx.params.providerID)
+          const providers = yield* Provider.Service
+          const provider = yield* providers.get(ctx.params.providerID)
           if (!provider)
             return yield* new ProviderNotFoundError({
               providerID: ctx.params.providerID,

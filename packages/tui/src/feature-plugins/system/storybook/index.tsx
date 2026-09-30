@@ -1,4 +1,4 @@
-import { Plugin } from "@opencode-ai/plugin/tui"
+import { Plugin } from "@opencode/plugin/tui"
 import { useTerminalDimensions } from "@opentui/solid"
 import { createSignal, For, type JSX } from "solid-js"
 import { StoryFooter } from "./footer"
@@ -97,15 +97,15 @@ function StorybookIndex(props: { context: Plugin.Context }) {
       width={dimensions().width}
       height={dimensions().height}
       flexDirection="column"
-      backgroundColor={theme.background.default}
+      backgroundColor={theme.background.base}
     >
       <box paddingTop={2} paddingLeft={2} flexDirection="column">
-        <text fg={theme.text.default}>storybook</text>
-        <text fg={theme.text.subdued}>fixture-driven simulations of production components</text>
+        <text fg={theme.text.base}>storybook</text>
+        <text fg={theme.text.muted}>fixture-driven simulations of production components</text>
         <box height={1} />
         <For each={stories}>
           {(story, index) => (
-            <text fg={index() === selected() ? theme.text.default : theme.text.subdued}>
+            <text fg={index() === selected() ? theme.text.base : theme.text.muted}>
               {index() === selected() ? "› " : "  "}
               {index() + 1} {story.title}
             </text>

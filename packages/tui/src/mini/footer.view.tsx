@@ -21,13 +21,14 @@ import {
   RunModelSelectBody,
   RunQueuedPromptSelectBody,
   RunSettingsBody,
-  RunSkillSelectBody,
   RunSubagentSelectBody,
   RunVariantSelectBody,
 } from "./footer.command"
 import { FOOTER_MENU_ROWS, RunFooterMenu } from "./footer.menu"
 import { RunFooterSubagentBody } from "./footer.subagent"
 import { RunPromptBody, createPromptState } from "./footer.prompt"
+import { promptAppend } from "./prompt.shared"
+import { promptOffsetWidth } from "../prompt/display"
 import { RunPermissionBody } from "./footer.permission"
 import { RunFormBody } from "./footer.form"
 import { createFormBodyState, type FormBodyState } from "./form.shared"
@@ -149,13 +150,11 @@ export function RunFooterView(props: RunFooterViewProps) {
   const [subagentMenuRows, setSubagentMenuRows] = createSignal(RUN_SUBAGENT_PANEL_ROWS)
   const queuedPrompts = createMemo(() => props.queuedPrompts?.() ?? [])
   const queue = createMemo(() => queuedPrompts().filter((item) => item.delivery === "queue"))
-  const skills = createMemo(() => (props.commands() ?? []).filter((item) => item.source === "skill"))
   const prompt = createMemo(() => active().type === "prompt" && route().type === "composer")
   const selectingSubagent = createMemo(() => active().type === "prompt" && route().type === "subagent-menu")
   const selectingQueued = createMemo(() => active().type === "prompt" && route().type === "queued-menu")
   const inspecting = createMemo(() => active().type === "prompt" && route().type === "subagent")
   const commanding = createMemo(() => active().type === "prompt" && route().type === "command")
-  const skilling = createMemo(() => active().type === "prompt" && route().type === "skill")
   const agenting = createMemo(() => active().type === "prompt" && route().type === "agent")
   const modeling = createMemo(() => active().type === "prompt" && route().type === "model")
   const varianting = createMemo(() => active().type === "prompt" && route().type === "variant")
@@ -167,7 +166,6 @@ export function RunFooterView(props: RunFooterViewProps) {
       selectingQueued() ||
       selectingSubagent() ||
       commanding() ||
-      skilling() ||
       agenting() ||
       modeling() ||
       varianting() ||
@@ -245,7 +243,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     if (current) details.push(variant ? `${current} ${variant}` : current)
     if (contextUsage()) details.push(contextUsage())
     if (cost()) details.push(cost())
-    if (queue().length > 0) details.push(`${queue().length} queued`)
+    if (queuedPrompts().length > 0) details.push(`${queuedPrompts().length} pending`)
     if (activeTabs().length > 0) details.push(`${activeTabs().length} subagent${activeTabs().length === 1 ? "" : "s"}`)
     return details.join(props.mono ? " - " : " · ")
   })
@@ -298,14 +296,6 @@ export function RunFooterView(props: RunFooterViewProps) {
     openRoute({ type: "agent" })
   }
 
-  const openSkillMenu = () => {
-    if (props.commands() && skills().length === 0) {
-      return
-    }
-
-    openRoute({ type: "skill" })
-  }
-
   const openVariant = () => {
     openRoute({ type: "variant" })
   }
@@ -323,7 +313,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   }
 
   const openQueuedMenu = () => {
-    if (queue().length === 0) return
+    if (queuedPrompts().length === 0) return
     openRoute({ type: "queued-menu" })
   }
 
@@ -332,7 +322,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   }
 
   const runQueuedAction = createSingleFlight<string>()
-  const queuedPromptAction = async (action: QueuedPromptAction, inboxID: string) => {
+  const queuedPromptAction = async (action: QueuedPromptAction, inboxID: string, failureLabel?: string) => {
     const run = props.onQueuedPromptAction
     if (!run) return false
     const result = await runQueuedAction(inboxID, async () => {
@@ -341,7 +331,9 @@ export function RunFooterView(props: RunFooterViewProps) {
         (error) => error,
       )
       if (!error) return true
-      props.onStatus(`failed to ${action === "cancel" ? "delete" : action} queued prompt: ${errorMessage(error)}`)
+      props.onStatus(
+        `failed to ${failureLabel ?? (action === "cancel" ? "delete" : action)} pending prompt: ${errorMessage(error)}`,
+      )
       return false
     })
     return result ?? false
@@ -398,7 +390,6 @@ export function RunFooterView(props: RunFooterViewProps) {
     onInputClear: props.onInputClear,
     onExitRequest: props.onExitRequest,
     onExit: props.onExit,
-    onSkillMenu: openSkillMenu,
     onSettings: openSettings,
     onRows: setPromptRows,
     onStatus: props.onStatus,
@@ -424,6 +415,7 @@ export function RunFooterView(props: RunFooterViewProps) {
     if (notice()) return notice()
     if (!footerDetails()) return shell() ? "Shell" : ""
     if (busy()) {
+      if (stateStatus() === "reconnecting") return "reconnecting"
       return interruptLabel() ? `${interruptLabel()} stop` : "Running"
     }
     return stateStatus() || (shell() ? "Shell" : "")
@@ -463,8 +455,8 @@ export function RunFooterView(props: RunFooterViewProps) {
 
     const items: Array<{ id: "queued" | "subagents" | "background"; key: string; label: string; expanded?: string }> =
       []
-    if (queue().length > 0 && queuedShortcut()) {
-      items.push({ id: "queued", key: queuedShortcut(), label: `${queue().length} queued` })
+    if (queuedPrompts().length > 0 && queuedShortcut()) {
+      items.push({ id: "queued", key: queuedShortcut(), label: `${queuedPrompts().length} pending` })
     }
     if (activeTabs().length > 0 && subagentShortcut()) {
       items.push({
@@ -546,6 +538,26 @@ export function RunFooterView(props: RunFooterViewProps) {
     props.onRequestExit?.(undefined)
   })
 
+  const clearScreen = () => {
+    if (renderer.isDestroyed) return
+    if (renderer.screenMode !== "split-footer") return
+    if (renderer.externalOutputMode !== "capture-stdout") return
+    if (renderer.currentControlState === "explicit_suspended") return
+    // Home, erase the visible display, keep terminal scrollback, then repaint the footer.
+    renderer.resetSplitFooterForReplay({ clearSavedLines: false })
+  }
+
+  Keymap.createLayer(() => ({
+    commands: [
+      {
+        id: "app.clear",
+        title: "Clear screen",
+        group: "System",
+        run: clearScreen,
+      },
+    ],
+  }))
+
   Keymap.createLayer(() => ({
     enabled: active().type === "prompt" && route().type === "composer" && !composer.visible(),
     commands: [
@@ -590,11 +602,11 @@ export function RunFooterView(props: RunFooterViewProps) {
   }))
 
   Keymap.createLayer(() => ({
-    enabled: active().type === "prompt" && route().type === "composer" && queue().length > 0,
+    enabled: active().type === "prompt" && route().type === "composer" && queuedPrompts().length > 0,
     commands: [
       {
         id: "session.queued_prompts",
-        title: "View queued prompts",
+        title: "View pending prompts",
         group: "Prompt",
         run: openQueuedMenu,
       },
@@ -651,7 +663,7 @@ export function RunFooterView(props: RunFooterViewProps) {
   })
 
   createEffect(() => {
-    if (route().type !== "queued-menu" || queue().length > 0) return
+    if (route().type !== "queued-menu" || queuedPrompts().length > 0) return
     closePanel()
   })
 
@@ -663,7 +675,6 @@ export function RunFooterView(props: RunFooterViewProps) {
     const current = route()
     if (
       current.type !== "command" &&
-      current.type !== "skill" &&
       current.type !== "agent" &&
       current.type !== "model" &&
       current.type !== "variant" &&
@@ -694,9 +705,10 @@ export function RunFooterView(props: RunFooterViewProps) {
       gap={0}
       padding={0}
     >
+      {/* The renderer seeds the leading blank row that entrySplash includes in scrollback. */}
       <Show when={startup()}>
         {(layout) => (
-          <box id="mini-startup" height={2} flexShrink={0} paddingTop={1} flexDirection="row">
+          <box id="mini-startup" height={1} flexShrink={0} flexDirection="row">
             <Show when={layout().label.startsWith("\u25aa")}>
               <OneCellSpinner
                 animation={SEED_LAUNCH}
@@ -779,12 +791,24 @@ export function RunFooterView(props: RunFooterViewProps) {
                         <Match when={selectingQueued()}>
                           <RunQueuedPromptSelectBody
                             theme={theme}
-                            prompts={queue}
+                            prompts={queuedPrompts}
                             onClose={closePanel}
-                            onSteer={(item) => {
-                              void queuedPromptAction("steer", item.messageID).then((steered) => {
-                                if (steered) closePanel()
-                              })
+                            onSelect={async (item) => {
+                              if (
+                                await queuedPromptAction(item.delivery === "queue" ? "steer" : "queue", item.messageID)
+                              )
+                                closePanel()
+                            }}
+                            onUndo={async (item) => {
+                              const current = composer.current()
+                              if (current.mode === "shell" && current.text) {
+                                props.onStatus("leave shell mode before undoing a queued prompt")
+                                return
+                              }
+                              if (!(await queuedPromptAction("cancel", item.messageID, "undo"))) return
+                              closePanel()
+                              const next = promptAppend(composer.current(), item.prompt)
+                              composer.replacePrompt(next, promptOffsetWidth(next.text))
                             }}
                             onDelete={(item) => {
                               void queuedPromptAction("cancel", item.messageID)
@@ -798,7 +822,7 @@ export function RunFooterView(props: RunFooterViewProps) {
                             theme={theme}
                             commands={props.commands}
                             subagents={tabs}
-                            queued={queue}
+                            queued={queuedPrompts}
                             variants={props.variants}
                             variantCycle={variantCycle()}
                             onClose={closePanel}
@@ -808,7 +832,6 @@ export function RunFooterView(props: RunFooterViewProps) {
                               closePanel()
                               void composer.openEditor()
                             }}
-                            onSkill={openSkillMenu}
                             onSubagent={openSubagentMenu}
                             onQueued={openQueuedMenu}
                             onVariant={openVariant}
@@ -829,27 +852,12 @@ export function RunFooterView(props: RunFooterViewProps) {
                               composer.submitText("/new")
                               closePanel()
                             }}
-                            onExit={props.onExit}
-                            mono={props.mono}
-                          />
-                        </Match>
-                        <Match when={skilling()}>
-                          <RunSkillSelectBody
-                            theme={theme}
-                            commands={props.commands}
-                            onClose={closePanel}
-                            onSelect={(name) => {
-                              composer.replacePrompt({
-                                text: `/${name} `,
-                                parts: [],
-                                command: {
-                                  name,
-                                  arguments: "",
-                                  source: "skill",
-                                },
-                              })
+                            onClear={() => {
                               closePanel()
+                              clearScreen()
                             }}
+                            onExit={props.onExit}
+                            clearShortcut={shortcut("app.clear")}
                             mono={props.mono}
                           />
                         </Match>

@@ -1,12 +1,13 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { TestClock } from "effect/testing"
-import { Credential } from "@opencode-ai/core/credential"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Bus } from "@opencode-ai/core/bus"
-import { Integration } from "@opencode-ai/core/integration"
+import { Credential } from "@opencode/core/credential"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Bus } from "@opencode/core/bus"
+import { Integration } from "@opencode/core/integration"
+import { State } from "@opencode/core/state"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Integration.node, Credential.node, Bus.node])))
@@ -429,6 +430,62 @@ describe("Integration", () => {
     }),
   )
 
+  it.effect("fails and closes OAuth attempts when a pending transform throws during persistence", () =>
+    Effect.gen(function* () {
+      const integrations = yield* Integration.Service
+      const credentials = yield* Credential.Service
+      const integrationID = Integration.ID.make("replay-fixture")
+      const methodID = Integration.MethodID.make("code")
+      let closed = false
+      yield* integrations.transform((editor) =>
+        editor.method.update({
+          integrationID,
+          method: { id: methodID, type: "oauth", label: "Fixture" },
+          authorize: () =>
+            Effect.addFinalizer(() => Effect.sync(() => (closed = true))).pipe(
+              Effect.as({
+                mode: "code" as const,
+                url: "https://example.com/authorize",
+                instructions: "Enter the fixture code",
+                callback: () =>
+                  Effect.succeed(
+                    Credential.OAuth.make({
+                      type: "oauth",
+                      methodID,
+                      access: "fixture-access",
+                      refresh: "fixture-refresh",
+                      expires: 1,
+                    }),
+                  ),
+              }),
+            ),
+        }),
+      )
+      const attempt = yield* integrations.oauth.connect({ integrationID, methodID })
+
+      yield* State.batch(
+        Effect.gen(function* () {
+          const failure = new Error("integration transform failed")
+          yield* integrations.transform(() => {
+            throw failure
+          })
+          const exit = yield* integrations.oauth
+            .complete({ integrationID, attemptID: attempt.attemptID, code: "fixture-code" })
+            .pipe(Effect.exit)
+
+          expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toBe(failure)
+          expect(yield* integrations.oauth.status({ integrationID, attemptID: attempt.attemptID })).toEqual({
+            status: "failed",
+            message: failure.message,
+            time: attempt.time,
+          })
+          expect(closed).toBe(true)
+          expect(yield* credentials.list(integrationID)).toEqual([])
+        }).pipe(Effect.scoped),
+      )
+    }),
+  )
+
   it.effect("expires abandoned OAuth attempts", () =>
     Effect.gen(function* () {
       const integrations = yield* Integration.Service
@@ -542,16 +599,19 @@ describe("Integration", () => {
           expect((yield* integrations.get(integrationID))?.connections).toEqual([
             {
               type: "credential",
+              method: "key",
               id: personal.id,
               label: "Personal",
             },
             {
               type: "credential",
+              method: "key",
               id: work.id,
               label: "Work",
             },
             {
               type: "credential",
+              method: "key",
               id: archived.id,
               label: "Archived",
             },
@@ -559,6 +619,7 @@ describe("Integration", () => {
           ])
           expect(yield* integrations.connection.active(integrationID)).toEqual({
             type: "credential",
+            method: "key",
             id: personal.id,
             label: "Personal",
           })
@@ -570,6 +631,7 @@ describe("Integration", () => {
 
           expect(yield* integrations.connection.active(integrationID)).toEqual({
             type: "credential",
+            method: "key",
             id: work.id,
             label: "Work",
           })
@@ -592,6 +654,7 @@ describe("Integration", () => {
           yield* integrations.connection.remove(work.id)
           expect(yield* integrations.connection.active(integrationID)).toEqual({
             type: "credential",
+            method: "key",
             id: personal.id,
             label: "Personal",
           })
@@ -615,5 +678,18 @@ describe("Integration", () => {
           else process.env.INTEGRATION_TEST_ACME_KEY = previous
         }),
     )
+  })
+})
+
+describe("AuthorizationError", () => {
+  test("reports the underlying cause message", () => {
+    expect(new Integration.AuthorizationError({ cause: new Error("Request failed: 401") }).message).toBe(
+      "Request failed: 401",
+    )
+  })
+
+  test("falls back when the cause carries no message", () => {
+    expect(new Integration.AuthorizationError({ cause: new Error() }).message).toBe("Authorization failed")
+    expect(new Integration.AuthorizationError({ cause: undefined }).message).toBe("Authorization failed")
   })
 })

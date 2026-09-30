@@ -1,4 +1,4 @@
-import type { JsonValue, SessionMessageAssistant, SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { JsonValue, SessionMessageAssistant, SessionMessageAssistantTool } from "@opencode/client/promise"
 import { createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import type { SessionDocument } from "../document"
@@ -249,6 +249,10 @@ const CompleteAgentWorkflow = {
         storyTool("tool_family_write", "write", "completed", {
           path: "src/new.ts",
           content: "export const stable = true",
+        }),
+        storyTool("tool_family_write_extra", "write", "completed", {
+          path: "src/extra.ts",
+          content: "export const extra = true",
         }),
         storyTool(
           "tool_family_patch",

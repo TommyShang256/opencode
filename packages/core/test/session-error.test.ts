@@ -4,6 +4,7 @@ import {
   ContentPolicyError,
   InvalidProviderOutputError,
   InvalidRequestError,
+  UnsupportedOperationError,
   AIError,
   NoRouteError,
   ModelID,
@@ -15,14 +16,14 @@ import {
   UnknownProviderError,
   ToolFailure,
   HttpContext,
-} from "@opencode-ai/ai"
-import { Permission } from "@opencode-ai/core/permission"
-import { ID } from "@opencode-ai/core/model"
-import { ModelResolver } from "@opencode-ai/core/model-resolver"
-import { Provider } from "@opencode-ai/core/provider"
-import { Tool } from "@opencode-ai/schema/tool"
-import { toSessionError } from "@opencode-ai/core/session/to-session-error"
-import { SessionRunnerRetry } from "@opencode-ai/core/session/runner/retry"
+} from "@opencode/ai"
+import { Permission } from "@opencode/core/permission"
+import { ID } from "@opencode/core/model"
+import { ModelResolver } from "@opencode/core/model-resolver"
+import { Provider } from "@opencode/core/provider"
+import { Tool } from "@opencode/schema/tool"
+import { toSessionError } from "@opencode/core/session/to-session-error"
+import { SessionRunnerRetry } from "@opencode/core/session/runner/retry"
 
 const llm = (reason: AIError["reason"]) => new AIError({ reason })
 
@@ -43,6 +44,18 @@ describe("toSessionError", () => {
       "provider.invalid-output",
     )
     expect(toSessionError(llm(new InvalidRequestError({ message: "request" }))).type).toBe("provider.invalid-request")
+    expect(
+      toSessionError(
+        llm(
+          new UnsupportedOperationError({
+            message: "no compact endpoint",
+            operation: "compact",
+            provider: ProviderID.make("provider"),
+            route: "route",
+          }),
+        ),
+      ),
+    ).toEqual({ type: "provider.unsupported-operation", message: "no compact endpoint" })
     expect(
       toSessionError(
         llm(
@@ -97,6 +110,7 @@ describe("toSessionError", () => {
       type: "provider.invalid-request",
       message: "too large",
       status: 413,
+      response: { body: '{"error":"context limit"}' },
     })
     expect(
       toSessionError(
@@ -114,6 +128,38 @@ describe("toSessionError", () => {
     })
   })
 
+  test("preserves provider response body without HTTP status", () => {
+    expect(toSessionError(llm(new RateLimitError({ message: "Slow down", body: '{"error":"rate limit"}' })))).toEqual({
+      type: "provider.rate-limit",
+      message: "Slow down",
+      response: { body: '{"error":"rate limit"}' },
+    })
+  })
+
+  test("maps token-sharing failures while preserving HTTP and stream bodies", () => {
+    const cases = [
+      ["subscription_sharing_user_not_eligible", "token sharing isn't available for this account"],
+      ["subscription_sharing_usage_limit_exceeded", "ChatGPT usage limit reached"],
+      ["subscription_sharing_usage_unavailable", "Try again later"],
+      ["subscription_sharing_unsupported_capability", "Remove the unsupported feature"],
+      ["subscription_sharing_route_not_supported", "Check the configured endpoint"],
+      ["subscription_sharing_invalid_user", "Reconnect to ChatGPT"],
+      ["subscription_sharing_user_unavailable", "Try again later"],
+      ["chatpass_v2_scope_not_authorized", "isn't authorized for this request"],
+      ["chatpass_v2_invalid_authorization_context", "isn't authorized for this request"],
+    ] as const
+    for (const [code, guidance] of cases) {
+      for (const body of [
+        JSON.stringify({ error: { code, message: "Request failed" } }),
+        JSON.stringify({ type: "response.failed", response: { error: { code, message: "Request failed" } } }),
+      ]) {
+        const error = toSessionError(llm(new UnknownProviderError({ message: "Request failed", body })))
+        expect(error.message).toContain(guidance)
+        expect(error.response).toEqual({ body })
+      }
+    }
+  })
+
   test("preserves unresolved provider endpoint errors", () => {
     const error = new ModelResolver.UnresolvedProviderVariablesError({
       providerID: Provider.ID.make("cloudflare-workers-ai"),
@@ -124,6 +170,30 @@ describe("toSessionError", () => {
       type: "provider.no-route",
       message:
         "Cannot initialize cloudflare-workers-ai/model: CLOUDFLARE_ACCOUNT_ID is required to resolve the provider endpoint",
+    })
+  })
+
+  test("preserves provider configuration and initialization errors", () => {
+    const configuration = new ModelResolver.ModelConfigurationError({
+      providerID: Provider.ID.make("azure"),
+      modelID: ID.make("gpt-5.4-nano"),
+      package: "@opencode/ai/providers/azure/responses",
+      detail: "Azure requires resourceName or baseURL",
+    })
+    expect(toSessionError(configuration)).toEqual({
+      type: "provider.no-route",
+      message: "Cannot initialize azure/gpt-5.4-nano: Azure requires resourceName or baseURL",
+    })
+    const initialization = new ModelResolver.ModelInitializationError({
+      providerID: Provider.ID.make("custom"),
+      modelID: ID.make("model"),
+      package: "@opencode/ai/providers/custom",
+      phase: "load",
+      detail: "Provider package @opencode/ai/providers/custom is broken",
+    })
+    expect(toSessionError(initialization)).toEqual({
+      type: "provider.no-route",
+      message: "Cannot initialize custom/model: Provider package @opencode/ai/providers/custom is broken",
     })
   })
 
@@ -140,6 +210,7 @@ describe("toSessionError", () => {
       llm(new ContentPolicyError({ message: "blocked" })),
       llm(new InvalidProviderOutputError({ message: "output" })),
       llm(new InvalidRequestError({ message: "request" })),
+      llm(new UnsupportedOperationError({ message: "unsupported", operation: "compact" })),
       llm(
         new NoRouteError({
           message: "failed",
@@ -151,10 +222,10 @@ describe("toSessionError", () => {
     ]
 
     expect(eligible.map(SessionRunnerRetry.isRetryable)).toEqual([true, true, true, true])
-    expect(ineligible.map(SessionRunnerRetry.isRetryable)).toEqual([false, false, false, false, false, false])
+    expect(ineligible.map(SessionRunnerRetry.isRetryable)).toEqual([false, false, false, false, false, false, false])
   })
 
-  test("retries transport failures only when delivery is absent or not sent", () => {
+  test("retries accepted transport reads but not accepted writes or rejected requests", () => {
     const retryable = [
       llm(new TransportError({ message: "http transport", transport: "http", operation: "request" })),
       llm(
@@ -166,8 +237,6 @@ describe("toSessionError", () => {
           phase: "connect",
         }),
       ),
-    ]
-    const ineligible = [
       llm(
         new TransportError({
           message: "send uncertain",
@@ -186,6 +255,17 @@ describe("toSessionError", () => {
           phase: "receive",
         }),
       ),
+    ]
+    const ineligible = [
+      llm(
+        new TransportError({
+          message: "accepted write failed",
+          transport: "websocket",
+          operation: "write",
+          delivery: "accepted",
+          phase: "send",
+        }),
+      ),
       llm(
         new TransportError({
           message: "continuation rejected",
@@ -198,8 +278,8 @@ describe("toSessionError", () => {
       ),
     ]
 
-    expect(retryable.map(SessionRunnerRetry.isRetryable)).toEqual([true, true])
-    expect(ineligible.map(SessionRunnerRetry.isRetryable)).toEqual([false, false, false])
+    expect(retryable.map(SessionRunnerRetry.isRetryable)).toEqual([true, true, true, true])
+    expect(ineligible.map(SessionRunnerRetry.isRetryable)).toEqual([false, false])
   })
 
   test("honors provider retry header overrides", () => {

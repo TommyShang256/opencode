@@ -61,7 +61,7 @@ describe("run runtime queue", () => {
     await task
   })
 
-  test("treats /exit as a close command", async () => {
+  test.each(["/exit", "/quit", "/q", ":q"])("treats %s as a close command", async (text) => {
     const ui = createFooterApiFixture()
     let calls = 0
 
@@ -72,7 +72,7 @@ describe("run runtime queue", () => {
       },
     })
 
-    ui.submit("/exit")
+    ui.submit(text)
     await task
 
     expect(calls).toBe(0)
@@ -100,15 +100,7 @@ describe("run runtime queue", () => {
 
     expect(created).toBe(1)
     expect(seen).toEqual(["hello"])
-    expect(ui.commits).toEqual([
-      {
-        kind: "user",
-        text: "hello",
-        phase: "start",
-        source: "system",
-        messageID: expect.any(String),
-      },
-    ])
+    expect(ui.commits).toEqual([])
   })
 
   test("treats /compact as a local compaction command", async () => {
@@ -133,7 +125,7 @@ describe("run runtime queue", () => {
 
     expect(compacted).toBe(1)
     expect(seen).toEqual(["hello"])
-    expect(ui.commits.map((item) => item.text)).toEqual(["hello"])
+    expect(ui.commits).toEqual([])
   })
 
   test("keeps prompts submitted after an in-flight /compact behind the compaction barrier", async () => {
@@ -256,15 +248,26 @@ describe("run runtime queue", () => {
     })
 
     expect(seen).toEqual(["  hello  "])
-    expect(ui.commits).toEqual([
-      {
-        kind: "user",
-        text: "  hello  ",
-        phase: "start",
-        source: "system",
-        messageID: expect.any(String),
+    expect(ui.commits).toEqual([])
+  })
+
+  test("demo commands own their local input echo", async () => {
+    const { createRunDemo } = await import("../../src/mini/demo")
+    const ui = createFooterApiFixture()
+    const demo = createRunDemo({ sessionID: "ses_demo", thinking: false, footer: ui.api })
+    expect(await demo.prompt({ text: "ordinary prompt", parts: [] })).toBe(false)
+    expect(ui.commits).toEqual([])
+    const task = runPromptQueue({
+      footer: ui.api,
+      run: async (prompt) => {
+        expect(await demo.prompt(prompt)).toBe(true)
+        ui.api.close()
       },
-    ])
+    })
+
+    ui.submit("/help")
+    await task
+    expect(ui.commits.filter((commit) => commit.kind === "user")).toMatchObject([{ text: "/help" }])
   })
 
   test("durably admits in-flight follow-ups in submission order", async () => {
@@ -290,7 +293,7 @@ describe("run runtime queue", () => {
     ui.submit("three")
     while (admitted.length < 3) await Bun.sleep(0)
     expect(admitted).toEqual(["one:steer", "two:queue", "three:queue"])
-    expect(ui.commits.map((item) => item.text)).toEqual(["one"])
+    expect(ui.commits).toEqual([])
 
     gate.resolve()
     await task
@@ -299,10 +302,12 @@ describe("run runtime queue", () => {
   test("preserves explicit steer and queue delivery for in-flight prompts", async () => {
     const ui = createFooterApiFixture()
     const admitted: string[] = []
+    const emitted: boolean[] = []
     const gate = Promise.withResolvers<void>()
 
     const task = runPromptQueue({
       footer: ui.api,
+      onSend: (_prompt, emittedUser) => emitted.push(emittedUser),
       run: async (_input, _signal, onAdmitted) => {
         onAdmitted()
         await gate.promise
@@ -318,6 +323,8 @@ describe("run runtime queue", () => {
     ui.submit("three", undefined, "queue")
     while (admitted.length < 2) await Bun.sleep(0)
     expect(admitted).toEqual(["two:steer", "three:queue"])
+    expect(emitted).toEqual([false, false, false])
+    expect(ui.commits).toEqual([])
 
     gate.resolve()
     await task

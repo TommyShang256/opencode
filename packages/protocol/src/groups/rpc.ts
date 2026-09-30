@@ -1,4 +1,4 @@
-import { optional } from "@opencode-ai/schema/schema"
+import { optional } from "@opencode/schema/schema"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { RpcError, RpcInternalError } from "../errors.js"
@@ -21,7 +21,7 @@ export const RpcGroup = HttpApiGroup.make("server.rpc")
       .annotateMerge(locationQueryOpenApi)
       .annotateMerge(
         OpenApi.annotations({
-          identifier: "v2.rpc.call",
+          identifier: "rpc.call",
           summary: "Call a plugin RPC",
           description: "Dispatch a method to the currently registered RPC at the requested location.",
         }),

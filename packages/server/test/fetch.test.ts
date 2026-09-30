@@ -1,10 +1,15 @@
 import { expect } from "bun:test"
+import fs from "node:fs/promises"
 import { createServer } from "node:http"
-import { makeMemoryDriver } from "@opencode-ai/core/environment/index"
-import { Mcp } from "@opencode-ai/core/mcp/index"
-import { Workspace } from "@opencode-ai/core/workspace"
-import { WorkspaceDriver } from "@opencode-ai/core/workspace/driver"
-import { Effect, Layer, Schedule } from "effect"
+import path from "node:path"
+import { Agent } from "@opencode/schema/agent"
+import { Integration } from "@opencode/schema/integration"
+import { ServerInfo } from "@opencode/protocol/groups/server"
+import { Effect, Layer, Schedule, Schema } from "effect"
+import { makeMemoryDriver } from "@opencode/core/environment/index"
+import { Mcp } from "@opencode/core/mcp/index"
+import { Workspace } from "@opencode/core/workspace"
+import { WorkspaceDriver } from "@opencode/core/workspace/driver"
 import { tmpdir } from "../../core/test/fixture/tmpdir"
 import { it } from "../../core/test/lib/effect"
 import { ServerFetch } from "../src/fetch"
@@ -59,45 +64,54 @@ function occupy(port: number, cancel = false) {
   })
 }
 
-const ready = (handler: Handler) =>
-  Effect.promise(() => handler(new Request("http://opencode.local/api/model/default")))
-
 const connectOpenAI = (handler: Handler) =>
-  Effect.promise(() =>
-    handler(
-      new Request("http://opencode.local/api/integration/openai/connect/oauth", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ methodID: "chatgpt-browser" }),
-      }),
-    ),
-  )
-
-const workspaceDriver = WorkspaceDriver.make({
-  create: ({ workspaceID }) => Effect.succeed({ binding: { workspaceID } }),
-  connect: () => Effect.succeed(makeMemoryDriver()),
-  suspendForIdle: () => Effect.void,
-  destroy: () => Effect.void,
-})
+  Effect.gen(function* () {
+    // Catalog endpoints no longer wait for plugin initialization.
+    yield* Effect.gen(function* () {
+      const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/integration")))
+      expect(response.status).toBe(200)
+      const body = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.Array(Integration.Info) }))(
+        yield* Effect.promise(() => response.json()),
+      )
+      return body.data.some(
+        (integration) =>
+          integration.id === "openai" &&
+          integration.methods.some((method) => method.type === "oauth" && method.id === "chatgpt-browser"),
+      )
+    }).pipe(
+      Effect.filterOrFail((ready) => ready),
+      Effect.retry(Schedule.spaced("10 millis")),
+      Effect.timeout("2 seconds"),
+    )
+    return yield* Effect.promise(() =>
+      handler(
+        new Request("http://opencode.local/api/integration/openai/connect/oauth", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ methodID: "chatgpt-browser" }),
+        }),
+      ),
+    )
+  })
 
 it.live("serves the HttpApi and enforces Basic auth like the Node server", () =>
   Effect.gen(function* () {
     const handler = yield* ServerFetch.make({ ...options, password: "secret" })
 
-    const denied = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/health")))
+    const denied = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/info")))
     expect(denied.status).toBe(401)
 
     const response = yield* Effect.promise(() =>
       handler(
-        new Request("http://opencode.local/api/health", {
+        new Request("http://opencode.local/api/info", {
           headers: { authorization: `Basic ${btoa("opencode:secret")}` },
         }),
       ),
     )
     expect(response.status).toBe(200)
-    const body: unknown = yield* Effect.promise(() => response.json())
-    if (typeof body !== "object" || body === null) throw new Error("Expected a health response object")
-    expect((body as Record<string, unknown>)["healthy"]).toBe(true)
+    const body = yield* Effect.promise(() => response.json()).pipe(Effect.flatMap(Schema.decodeUnknownEffect(ServerInfo)))
+    expect(body.version).toBe("test-version")
+    expect(body.paths.tmp).toEndWith("opencode")
   }),
 )
 
@@ -115,12 +129,12 @@ it.live("serves unauthenticated and answers CORS preflight when no password is c
   Effect.gen(function* () {
     const handler = yield* ServerFetch.make(options)
 
-    const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/health")))
+    const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/info")))
     expect(response.status).toBe(200)
 
     const preflight = yield* Effect.promise(() =>
       handler(
-        new Request("http://opencode.local/api/health", {
+        new Request("http://opencode.local/api/info", {
           method: "OPTIONS",
           headers: {
             origin: "http://localhost:3000",
@@ -147,7 +161,7 @@ it.live("applies custom CORS origins to HTTP responses and PTY ticket checks", (
           const allowed = origin !== "https://untrusted.example.com"
           const preflight = yield* Effect.promise(() =>
             handler(
-              new Request("http://opencode.local/api/health", {
+              new Request("http://opencode.local/api/info", {
                 method: "OPTIONS",
                 headers: {
                   origin,
@@ -163,7 +177,7 @@ it.live("applies custom CORS origins to HTTP responses and PTY ticket checks", (
 
           const response = yield* Effect.promise(() =>
             handler(
-              new Request("http://opencode.local/api/health", {
+              new Request("http://opencode.local/api/info", {
                 headers: { origin, authorization: `Basic ${btoa("opencode:secret")}` },
               }),
             ),
@@ -184,6 +198,33 @@ it.live("applies custom CORS origins to HTTP responses and PTY ticket checks", (
         }),
     )
   }).pipe(Effect.scoped),
+)
+
+it.live("returns 404 when a previously readable file is deleted", () =>
+  Effect.acquireUseRelease(
+    Effect.promise(() => tmpdir("opencode-fs-read-endpoint-")),
+    (tmp) =>
+      Effect.gen(function* () {
+        const handler = yield* ServerFetch.make(options)
+        const file = path.join(tmp.path, "deleted.txt")
+        yield* Effect.promise(() => fs.writeFile(file, "content"))
+        const url = new URL("http://opencode.local/api/fs/read/deleted.txt")
+        url.searchParams.set("location[directory]", tmp.path)
+
+        const readable = yield* Effect.promise(() => handler(new Request(url)))
+        expect(readable.status).toBe(200)
+
+        yield* Effect.promise(() => fs.unlink(file))
+        const missing = yield* Effect.promise(() => handler(new Request(url)))
+        expect(missing.status).toBe(404)
+        expect(yield* Effect.promise(() => missing.json())).toEqual({
+          _tag: "FileNotFoundError",
+          path: "deleted.txt",
+          message: "File not found: deleted.txt",
+        })
+      }),
+    (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+  ).pipe(Effect.scoped),
 )
 
 it.live("lists registered tools through the location-scoped capability endpoint", () =>
@@ -366,7 +407,6 @@ it.live("cancels a stale OpenAI OAuth callback server before falling back", () =
   Effect.gen(function* () {
     const requests = yield* occupy(1455, true)
     const handler = yield* ServerFetch.make(options)
-    yield* ready(handler)
     const response = yield* connectOpenAI(handler)
 
     expect(response.status).toBe(200)
@@ -380,7 +420,6 @@ it.live("falls back to port 1457 when OpenAI OAuth port 1455 remains busy", () =
   Effect.gen(function* () {
     const requests = yield* occupy(1455)
     const handler = yield* ServerFetch.make(options)
-    yield* ready(handler)
     const response = yield* connectOpenAI(handler)
 
     expect(response.status).toBe(200)
@@ -397,7 +436,6 @@ it.live(
       yield* occupy(1455)
       yield* occupy(1457)
       const handler = yield* ServerFetch.make(options)
-      yield* ready(handler)
       const response = yield* connectOpenAI(handler)
 
       expect(response.status).toBe(400)
@@ -410,64 +448,6 @@ it.live(
     }),
   // Real retries wait 18 * 200 ms; startup and scoped cleanup also count toward the deadline.
   { timeout: 10_000 },
-)
-
-it.live("treats destroying a missing workspace as success", () =>
-  Effect.gen(function* () {
-    const handler = yield* ServerFetch.make(options)
-    const response = yield* Effect.promise(() =>
-      handler(
-        new Request(`http://opencode.local/api/workspace/${Workspace.ID.create()}`, {
-          method: "DELETE",
-        }),
-      ),
-    )
-
-    expect(response.status).toBe(200)
-    expect(yield* Effect.promise(() => response.json())).toEqual({ destroyed: false })
-  }),
-)
-
-it.live("creates idempotent caller-identified workspaces through the HttpApi", () =>
-  Effect.gen(function* () {
-    const handler = yield* ServerFetch.make(options, {
-      overrides: [
-        WorkspaceDriver.node.replace(WorkspaceDriver.registryNode({ fake: workspaceDriver, other: workspaceDriver })),
-      ],
-    })
-    const id = Workspace.ID.create()
-    const create = (body: unknown) =>
-      Effect.promise(() =>
-        handler(
-          new Request("http://opencode.local/api/workspace", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify(body),
-          }),
-        ),
-      )
-
-    const supplied = yield* create({ id, provider: "fake" })
-    expect(supplied.status).toBe(200)
-    expect(yield* Effect.promise(() => supplied.json())).toEqual({ data: id })
-
-    const repeated = yield* create({ id, provider: "fake" })
-    expect(repeated.status).toBe(200)
-    expect(yield* Effect.promise(() => repeated.json())).toEqual({ data: id })
-
-    const conflict = yield* create({ id, provider: "other" })
-    expect(conflict.status).toBe(409)
-    expect(yield* Effect.promise(() => conflict.json())).toMatchObject({
-      _tag: "ConflictError",
-      resource: id,
-    })
-
-    expect((yield* create({ id: "invalid", provider: "fake" })).status).toBe(400)
-
-    const minted = yield* create({ provider: "fake" })
-    expect(minted.status).toBe(200)
-    expect(yield* Effect.promise(() => minted.json())).toMatchObject({ data: expect.stringMatching(/^wrk_/) })
-  }),
 )
 
 it.live("serves the session view operation and missing-session error", () =>
@@ -517,7 +497,7 @@ it.live("serves the session view operation and missing-session error", () =>
   }),
 )
 
-it.live("routes pending requests by Session without loading an instance", () =>
+it.live("routes pending requests through the Session's instance", () =>
   Effect.gen(function* () {
     const config = yield* Effect.acquireDisposable(Effect.promise(() => tmpdir("opencode-pending-read-")))
     const handler = yield* ServerFetch.make({
@@ -569,7 +549,7 @@ it.live("routes pending requests by Session without loading an instance", () =>
     )
     expect(global.status).toBe(200)
     expect(yield* Effect.promise(() => global.json())).toEqual({ data: [] })
-    expect(yield* loaded()).toEqual([])
+    expect(yield* loaded()).toEqual([{ directory: process.cwd() }])
 
     const createdForm = yield* Effect.promise(() =>
       handler(
@@ -616,7 +596,22 @@ it.live("routes pending requests by Session without loading an instance", () =>
     expect(yield* Effect.promise(() => globalForms.json())).toMatchObject({ data: [{ title: "Global form" }] })
 
     // Agent permission policy is installed by plugin activation.
-    expect((yield* ready(handler)).status).toBe(200)
+    yield* Effect.gen(function* () {
+      const response = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/agent")))
+      expect(response.status).toBe(200)
+      const body = Schema.decodeUnknownSync(Schema.Struct({ data: Schema.Array(Agent.Info) }))(
+        yield* Effect.promise(() => response.json()),
+      )
+      return body.data.some(
+        (agent) =>
+          agent.id === "build" &&
+          agent.permissions.some((rule) => rule.action === "shell" && rule.resource === "*" && rule.effect === "ask"),
+      )
+    }).pipe(
+      Effect.filterOrFail((ready) => ready),
+      Effect.retry(Schedule.spaced("10 millis")),
+      Effect.timeout("2 seconds"),
+    )
     const createdPermission = yield* Effect.promise(() =>
       handler(
         new Request(`http://opencode.local/api/session/${created.data.id}/permission`, {
@@ -651,7 +646,7 @@ it.live("stays serviceable when the first request aborts", () =>
 
     const aborted = yield* Effect.promise(() => {
       const controller = new AbortController()
-      const first = handler(new Request("http://opencode.local/api/health", { signal: controller.signal }))
+      const first = handler(new Request("http://opencode.local/api/info", { signal: controller.signal }))
       controller.abort()
       return first.then(
         () => "resolved" as const,
@@ -660,7 +655,7 @@ it.live("stays serviceable when the first request aborts", () =>
     })
     expect(["resolved", "rejected"]).toContain(aborted)
 
-    const second = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/health")))
+    const second = yield* Effect.promise(() => handler(new Request("http://opencode.local/api/info")))
     expect(second.status).toBe(200)
   }),
 )

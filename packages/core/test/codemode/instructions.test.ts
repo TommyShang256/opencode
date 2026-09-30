@@ -1,24 +1,26 @@
 import { describe, expect } from "bun:test"
-import { CodeModeCatalog } from "@opencode-ai/core/codemode/catalog"
-import { CodeModeInstructions } from "@opencode-ai/core/codemode/instructions"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { Location } from "@opencode-ai/core/location"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Tool } from "@opencode-ai/core/tool"
+import { CodeModeCatalog } from "@opencode/core/codemode/catalog"
+import { CodeModeInstructions } from "@opencode/core/codemode/instructions"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { Location } from "@opencode/core/location"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Tool } from "@opencode/core/tool"
 import { Effect, Schema } from "effect"
 import { it } from "../lib/effect"
 import { readInitial, readUpdate } from "../lib/instructions"
 
 const echo: CodeModeCatalog.Tool = {
-  path: "notes.echo",
+  type: "tool",
+  name: "notes.echo",
   description: "Echo text",
-  signature: "tools.notes.echo(input: {\n  text: string,\n}): Promise<string>",
+  signature: "tools.notes.echo({\n  text: string,\n}): Promise<string>",
 }
 
 const lookup: CodeModeCatalog.Tool = {
-  path: "orders.lookup",
+  type: "tool",
+  name: "orders.lookup",
   description: "Look up an order",
-  signature: "tools.orders.lookup(input: {\n  id: string,\n}): Promise<unknown>",
+  signature: "tools.orders.lookup({\n  id: string,\n}): Promise<unknown>",
 }
 
 describe("CodeModeInstructions", () => {
@@ -44,11 +46,9 @@ describe("CodeModeInstructions", () => {
   it.effect("renders the initial catalog, semantic deltas, and removal", () =>
     Effect.gen(function* () {
       const initialized = yield* readInitial(CodeModeInstructions.make({ tools: [echo] }))
-      expect(initialized.text).toContain(
-        "This catalog is the complete set of tools available within Code Mode. Tools presented elsewhere are not available in this runtime.",
-      )
+      expect(initialized.text).toContain("Use the `execute` tool to call the tools listed below.")
+      expect(initialized.text).toContain("The catalog is complete.")
       expect(initialized.text).toContain("## Available tools")
-      expect(initialized.text).not.toContain("## Search")
       expect(initialized.text).toContain(`  - ${echo.signature} // Echo text`)
 
       const added = yield* readUpdate(CodeModeInstructions.make({ tools: [echo, lookup] }), initialized)
@@ -92,10 +92,10 @@ describe("CodeModeInstructions", () => {
       const tools = yield* Tool.Service
       const initialized = yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* tools.transform((draft) => {
-            draft.namespace({ name: "tools", description: "Project utilities" })
-            draft.add({ ...zeta, options: { namespace: "tools" } })
-            draft.add({ ...alpha, options: { namespace: "tools" } })
+          yield* tools.transform((editor) => {
+            editor.namespace({ name: "tools", description: "Project utilities" })
+            editor.add({ ...zeta, options: { namespace: "tools" } })
+            editor.add({ ...alpha, options: { namespace: "tools" } })
           })
           const snapshot = yield* tools.snapshot()
           return yield* readInitial(CodeModeInstructions.make(snapshot.codeModeCatalog))
@@ -103,10 +103,10 @@ describe("CodeModeInstructions", () => {
       )
       const reordered = yield* Effect.scoped(
         Effect.gen(function* () {
-          yield* tools.transform((draft) => {
-            draft.namespace({ name: "tools", description: "Project utilities" })
-            draft.add({ ...alpha, options: { namespace: "tools" } })
-            draft.add({ ...zeta, options: { namespace: "tools" } })
+          yield* tools.transform((editor) => {
+            editor.namespace({ name: "tools", description: "Project utilities" })
+            editor.add({ ...alpha, options: { namespace: "tools" } })
+            editor.add({ ...zeta, options: { namespace: "tools" } })
           })
           const snapshot = yield* tools.snapshot()
           return yield* readUpdate(CodeModeInstructions.make(snapshot.codeModeCatalog), initialized)

@@ -1,15 +1,17 @@
 export * as SessionRunnerRetry from "./retry.js"
 
-import { AIError } from "@opencode-ai/ai"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Model } from "@opencode-ai/schema/model"
-import { SessionError } from "@opencode-ai/schema/session-error"
+import { AIError, isRetryable } from "@opencode/ai"
+import { Agent } from "@opencode/schema/agent"
+import { Model } from "@opencode/schema/model"
+import { SessionError } from "@opencode/schema/session-error"
 import { Clock, Duration, Effect, Pull, Schedule } from "effect"
 import { Bus } from "../../bus.js"
 import type { PluginHooks } from "../../plugin/hooks.js"
 import { SessionEvent } from "../event.js"
 import { SessionMessage } from "../message.js"
 import { SessionSchema } from "../schema.js"
+
+export { isRetryable }
 
 interface Input {
   readonly cause: AIError
@@ -26,36 +28,6 @@ export interface Decision {
   readonly delay: number
 }
 
-export function isRetryable(error: AIError) {
-  const override = error.reason.http?.headers["x-should-retry"]
-  if (override === "true") return true
-  if (override === "false") return false
-  switch (error.reason._tag) {
-    case "RateLimit":
-    case "ProviderInternal":
-      return true
-    case "Transport":
-      return error.reason.delivery === undefined || error.reason.delivery === "not-sent"
-    case "InvalidProviderOutput":
-      return error.reason.classification === "incomplete-stream"
-    // Unrecognized failures retry: classification records affirmative
-    // deterministic evidence, and transient failures are exactly the ones
-    // that arrive in shapes no classifier anticipates.
-    case "UnknownProvider":
-      return true
-    case "Authentication":
-    case "QuotaExceeded":
-    case "ContentPolicy":
-    case "InvalidRequest":
-    case "NoRoute":
-      return false
-    default: {
-      const exhaustive: never = error.reason
-      return exhaustive
-    }
-  }
-}
-
 /** Bound provider-requested delays so a hostile or buggy retry-after cannot stall a session for hours. */
 const RETRY_AFTER_MAX = Duration.toMillis("15 minutes")
 
@@ -67,7 +39,13 @@ const retryAfter = (input: Input) => {
   return undefined
 }
 
-const schedule = Schedule.max([Schedule.exponential("2 seconds"), Schedule.recurs(4)]).pipe(
+// Exponential from 2s capped at 10s per gap, for 10 retries: 2, 4, 8, then 10 × 7, about 84s of
+// waiting when every attempt fails (67–101s with jitter). `min` takes the faster schedule, so the
+// cap applies per gap; `max` with `recurs` bounds the count.
+const schedule = Schedule.max([
+  Schedule.min([Schedule.exponential("2 seconds"), Schedule.spaced("10 seconds")]),
+  Schedule.recurs(10),
+]).pipe(
   Schedule.jittered,
   Schedule.setInputType<Input>(),
   Schedule.modifyDelay(({ input, duration: delay }) => {
@@ -77,11 +55,11 @@ const schedule = Schedule.max([Schedule.exponential("2 seconds"), Schedule.recur
   }),
 )
 
-export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
+export const policy = (sessionID: SessionSchema.ID) =>
   Effect.gen(function* () {
     const step = yield* Schedule.toStep(schedule)
     let attempt = 1
-    const decide = (input: Input) =>
+    return (input: Input) =>
       Effect.gen(function* () {
         const now = yield* Clock.currentTimeMillis
         const next = yield* step(now, input).pipe(Pull.catchDone(() => Effect.succeed(undefined)))
@@ -103,6 +81,11 @@ export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
           Number.isFinite(event.decision.delay) && event.decision.delay >= 0 ? Math.ceil(event.decision.delay) : delay
         return { retry: true as const, attempt, delay: normalized }
       })
+  })
+
+export const make = (bus: Bus.Interface, sessionID: SessionSchema.ID) =>
+  Effect.gen(function* () {
+    const decide = yield* policy(sessionID)
     const wait = (input: {
       readonly decision: Decision
       readonly assistantMessageID: SessionMessage.ID

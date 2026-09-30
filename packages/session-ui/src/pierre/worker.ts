@@ -1,6 +1,6 @@
 import { WorkerPoolManager } from "@pierre/diffs/worker"
 import ShikiWorkerUrl from "@pierre/diffs/worker/worker.js?worker&url"
-import { registerOpenCodeTheme } from "@opencode-ai/ui/context/marked-theme-register"
+import { registerOpenCodeTheme } from "@opencode/ui/context/marked-theme-register"
 
 registerOpenCodeTheme()
 
@@ -8,7 +8,7 @@ export function workerFactory(): Worker {
   return new Worker(ShikiWorkerUrl, { type: "module" })
 }
 
-function createPool(lineDiffType: "none" | "word-alt") {
+function createPool(lineDiffType: "none" | "word-line") {
   const pool = new WorkerPoolManager(
     {
       workerFactory,
@@ -22,6 +22,9 @@ function createPool(lineDiffType: "none" | "word-alt") {
     {
       theme: "OpenCode",
       lineDiffType,
+      // Pierre renders with the pool's options, not the viewer's, whenever the pool works. The "none" pool only
+      // serves diffs above the large-file threshold, so it carries the plain-text fallback the viewer requests.
+      ...(lineDiffType === "none" && { maxLineDiffLength: 0, tokenizeMaxLineLength: 1 }),
       preferredHighlighter: "shiki-wasm",
     },
   )
@@ -33,7 +36,7 @@ function createPool(lineDiffType: "none" | "word-alt") {
 let plain: WorkerPoolManager | undefined
 let diff: WorkerPoolManager | undefined
 
-export function getWorkerPool(lineDiffType: "none" | "word-alt" = "word-alt"): WorkerPoolManager | undefined {
+export function getWorkerPool(lineDiffType: "none" | "word-line" = "word-line"): WorkerPoolManager | undefined {
   if (typeof window === "undefined") return
 
   if (lineDiffType === "none") {
@@ -41,7 +44,7 @@ export function getWorkerPool(lineDiffType: "none" | "word-alt" = "word-alt"): W
     return plain
   }
 
-  if (!diff) diff = createPool("word-alt")
+  if (!diff) diff = createPool("word-line")
   return diff
 }
 

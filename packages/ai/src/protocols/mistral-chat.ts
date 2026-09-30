@@ -9,6 +9,8 @@ import {
   AIError,
   InvalidProviderOutputError,
   LLMEvent,
+  ProviderInternalError,
+  UnknownProviderError,
   Usage,
   type FinishReasonDetails,
   type LLMRequest,
@@ -19,11 +21,11 @@ import {
 import { classifyProviderFailure } from "../provider-error.js"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
 import { Lifecycle } from "./utils/lifecycle.js"
+import { MistralToolID } from "./utils/mistral-tool-id.js"
 import { ToolStream } from "./utils/tool-stream.js"
 
 const ADAPTER = "mistral-chat"
 const DONE = "[DONE]" as const
-const TOOL_ID = /^[A-Za-z0-9]{9}$/
 export const DEFAULT_BASE_URL = "https://api.mistral.ai/v1"
 export const PATH = "/chat/completions"
 
@@ -221,40 +223,14 @@ const MistralEvent = Schema.StructWithRest(
 type MistralEvent = Schema.Schema.Type<typeof MistralEvent>
 const MistralStreamEvent = Schema.Union([Schema.Literal(DONE), Protocol.jsonEvent(MistralEvent)])
 
-const hashID = (value: string) => {
-  const hash = (seed: number) => {
-    let result = seed
-    for (const char of value) result = Math.imul(result ^ char.charCodeAt(0), 16777619)
-    return (result >>> 0).toString(36)
-  }
-  return `${hash(2166136261).padStart(7, "0")}${hash(2246822519).padStart(7, "0")}`.slice(-9)
-}
-
-const toolIDNormalizer = (request: LLMRequest) => {
-  const ids = request.messages.flatMap((message) =>
-    message.content.flatMap((part) => (part.type === "tool-call" || part.type === "tool-result" ? [part.id] : [])),
-  )
-  const used = new Set(ids.filter((id) => TOOL_ID.test(id)))
-  const normalized = new Map<string, string>()
-  return (id: string) => {
-    if (TOOL_ID.test(id)) return id
-    const previous = normalized.get(id)
-    if (previous) return previous
-    let attempt = 0
-    let candidate = hashID(id)
-    while (used.has(candidate)) candidate = hashID(`${id}:${++attempt}`)
-    used.add(candidate)
-    normalized.set(id, candidate)
-    return candidate
-  }
-}
-
 const lowerMedia = Effect.fn("MistralChat.lowerMedia")(function* (part: MediaPart) {
-  const media = ProviderShared.normalizeMedia(part)
-  const url = typeof part.data === "string" && /^(?:https?:|data:)/.test(part.data) ? part.data : media.dataUrl
-  if (media.mime.startsWith("image/")) return { type: "image_url" as const, image_url: url }
-  if (media.mime === "application/pdf") return { type: "document_url" as const, document_url: url }
-  return yield* ProviderShared.invalidRequest(`Mistral Chat does not support media type ${part.mediaType}`)
+  const mime = part.media.mediaType.toLowerCase()
+  const url =
+    ProviderShared.mediaUrl(part.media) ??
+    (yield* ProviderShared.requireInlineMedia("Mistral Chat", part.media)).dataUrl
+  if (mime.startsWith("image/")) return { type: "image_url" as const, image_url: url }
+  if (mime === "application/pdf") return { type: "document_url" as const, document_url: url }
+  return yield* ProviderShared.invalidRequest(`Mistral Chat does not support media type ${part.media.mediaType}`)
 })
 
 const lowerUser = Effect.fn("MistralChat.lowerUser")(function* (message: LLMRequest["messages"][number]) {
@@ -342,7 +318,7 @@ const lowerToolResults = Effect.fn("MistralChat.lowerToolResults")(function* (
         content.push({ type: "text", text: item.text })
         continue
       }
-      content.push(yield* lowerMedia({ type: "media", mediaType: item.mime, data: item.uri, filename: item.name }))
+      content.push(yield* lowerMedia(ProviderShared.toolFileMedia(item)))
     }
     output.push({
       role: "tool",
@@ -357,7 +333,7 @@ const lowerToolResults = Effect.fn("MistralChat.lowerToolResults")(function* (
 })
 
 const lowerMessages = Effect.fn("MistralChat.lowerMessages")(function* (request: LLMRequest) {
-  const normalizeID = toolIDNormalizer(request)
+  const normalizeID = MistralToolID.normalizer(request)
   const messages: MistralMessage[] =
     request.system.length === 0 ? [] : [{ role: "system", content: ProviderShared.joinText(request.system) }]
   for (const message of request.messages) {
@@ -414,10 +390,11 @@ export const fromRequest = Effect.fn("MistralChat.fromRequest")(function* (reque
         tool: (name) => ({ type: "function" as const, function: { name } }),
       })
     : undefined
+  const flattened = ProviderShared.flattenToolRequest(request)
   return {
     model: request.model.id,
-    messages: yield* lowerMessages(request),
-    tools: request.tools.length > 0 ? request.tools.map(lowerTool) : undefined,
+    messages: yield* lowerMessages(flattened.request),
+    tools: flattened.tools.length > 0 ? flattened.tools.map(lowerTool) : undefined,
     tool_choice: toolChoice,
     stream: true as const,
     max_tokens: request.generation?.maxTokens,
@@ -449,6 +426,7 @@ interface ActiveContent {
   readonly type: "text" | "reasoning"
   readonly id: string
   readonly thinking?: MistralThinkingContent
+  readonly thinkingUnits?: MistralThinkingUnit[]
 }
 
 export interface ParserState {
@@ -525,8 +503,8 @@ const closeActive = (state: ParserState, events: LLMEvent[]) => {
           state.lifecycle,
           events,
           state.active.id,
-          thinkingMetadata(state.active.thinking ?? { type: "thinking", thinking: [] }),
-          thinkingText(state.active.thinking?.thinking ?? []),
+          thinkingMetadata({ ...state.active.thinking, type: "thinking", thinking: state.active.thinkingUnits ?? [] }),
+          thinkingText(state.active.thinkingUnits ?? []),
         )
   return { ...state, lifecycle, active: undefined }
 }
@@ -547,20 +525,23 @@ const appendThinking = (state: ParserState, events: LLMEvent[], part: MistralOut
   const current = state.active?.type === "reasoning" ? state : closeActive(state, events)
   const units = thinkingUnits(part.thinking)
   const active = current.active ?? { type: "reasoning" as const, id: `reasoning-${current.nextContent}` }
+  // Keep native units out of streamed events until the block is complete.
+  const accumulated = active.thinkingUnits ?? []
+  accumulated.push(...units)
   const thinking = {
     ...active.thinking,
     ...part,
     type: "thinking" as const,
-    thinking: [...(active.thinking?.thinking ?? []), ...units],
+    thinking: [],
   }
   const text = thinkingText(units)
   return {
     ...current,
     lifecycle:
       text.length > 0
-        ? Lifecycle.reasoningDelta(current.lifecycle, events, active.id, text, thinkingMetadata(thinking))
-        : Lifecycle.reasoningStart(current.lifecycle, events, active.id, thinkingMetadata(thinking)),
-    active: { ...active, thinking },
+        ? Lifecycle.reasoningDelta(current.lifecycle, events, active.id, text)
+        : Lifecycle.reasoningStart(current.lifecycle, events, active.id),
+    active: { ...active, thinking, thinkingUnits: accumulated },
     nextContent: current.active ? current.nextContent : current.nextContent + 1,
   }
 }
@@ -579,13 +560,13 @@ const appendContent = (
 }
 
 const normalizeStreamToolID = (state: ParserState, source: string) => {
-  if (TOOL_ID.test(source))
+  if (MistralToolID.valid.test(source))
     return { id: source, state: { ...state, usedToolIDs: new Set([...state.usedToolIDs, source]) } }
   const previous = state.toolIDs.get(source)
   if (previous) return { id: previous, state }
   let attempt = 0
-  let id = hashID(source)
-  while (state.usedToolIDs.has(id)) id = hashID(`${source}:${++attempt}`)
+  let id = MistralToolID.hash(source)
+  while (state.usedToolIDs.has(id)) id = MistralToolID.hash(`${source}:${++attempt}`)
   return {
     id,
     state: {
@@ -698,6 +679,16 @@ const step = Effect.fn("MistralChat.step")(function* (state: ParserState, event:
   const finishReason = {
     normalized: mapFinishReason(choice.finish_reason),
     raw: choice.finish_reason,
+  }
+  if (finishReason.normalized === "error") {
+    const details = {
+      message: `Mistral Chat stopped with ${finishReason.raw}`,
+      body: ProviderShared.encodeJson(event),
+    }
+    return yield* new AIError({
+      reason:
+        finishReason.raw === "network_error" ? new ProviderInternalError(details) : new UnknownProviderError(details),
+    })
   }
   const incomplete = finishReason.normalized === "length" || finishReason.normalized === "content-filter"
   if (!incomplete && Object.keys(withTools.pendingTools).length > 0)

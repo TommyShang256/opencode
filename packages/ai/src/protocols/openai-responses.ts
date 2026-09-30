@@ -5,13 +5,15 @@ import { Auth } from "../route/auth.js"
 import { Endpoint } from "../route/endpoint.js"
 import { Protocol } from "../route/protocol.js"
 import { HttpTransport } from "../route/transport/index.js"
-import { LLMRequest, type JsonSchema, type ToolDefinition } from "../schema/index.js"
+import { LLMRequest, type ToolDefinition, type ToolEntry } from "../schema/index.js"
+import { resolveEffortUpdates } from "../effort-updates.js"
 import { OpenResponses } from "./open-responses.js"
+import { OpenResponsesOptions } from "./utils/open-responses-options.js"
 import { JsonObject, optionalArray, optionalNull, ProviderShared } from "./shared.js"
-import { OpenAIImage } from "./utils/openai-image.js"
 import { ResponsesHostedTools } from "./utils/responses-hosted-tools.js"
-import { ToolSchemaProjection } from "./utils/tool-schema.js"
 import { OpenResponsesChannel } from "./open-responses-channel.js"
+import { ResponsesCompaction } from "./utils/responses-compaction.js"
+import { ResponsesCheckpoint } from "./utils/responses-checkpoint.js"
 
 const ADAPTER = "openai-responses"
 const NAME = "OpenAI Responses"
@@ -19,6 +21,14 @@ const WEBSOCKET_PROTOCOL_HEADER = "responses_websockets=2026-02-06"
 const WEBSOCKET_ROTATE_AFTER_MS = 55 * 60 * 1000
 export const DEFAULT_BASE_URL = "https://api.openai.com/v1"
 export const PATH = OpenResponses.PATH
+
+export const ContextManagement = Schema.Array(
+  Schema.Struct({
+    type: Schema.Literal("compaction"),
+    compactThreshold: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+  }),
+)
+export type ContextManagement = typeof ContextManagement.Type
 
 const OpenAIResponsesImageGenerationTool = Schema.Struct({
   type: Schema.tag("image_generation"),
@@ -29,7 +39,16 @@ const OpenAIResponsesImageGenerationTool = Schema.Struct({
   output_format: Schema.optional(Schema.Literals(["png", "jpeg", "webp"])),
   partial_images: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
   quality: Schema.optional(Schema.Literals(["auto", "low", "medium", "high"])),
-  size: Schema.optional(OpenAIImage.Size),
+  size: Schema.optional(
+    Schema.String.check(
+      Schema.makeFilter((value) => {
+        if (value === "auto") return undefined
+        const match = /^(\d+)x(\d+)$/.exec(value)
+        if (!match) return "image size must be `auto` or `{width}x{height}`"
+        return Number(match[1]) > 0 && Number(match[2]) > 0 ? undefined : "image dimensions must be positive integers"
+      }),
+    ),
+  ),
 })
 
 const OpenAIResponsesHostedToolItem = Schema.Union([
@@ -66,18 +85,43 @@ const OpenAIResponsesHostedToolItem = Schema.Union([
   ),
 ])
 
-const OpenAIResponsesTools = Schema.Union([OpenResponses.Tool, OpenAIResponsesImageGenerationTool])
+const OpenAIResponsesNamespace = Schema.Struct({
+  type: Schema.tag("namespace"),
+  name: Schema.String,
+  description: Schema.String,
+  tools: Schema.Array(OpenResponses.Tool),
+})
+
+const OpenAIResponsesTools = Schema.Union([
+  OpenResponses.Tool,
+  OpenAIResponsesNamespace,
+  OpenAIResponsesImageGenerationTool,
+])
 
 const OpenAIResponsesToolChoice = Schema.Union([
   OpenResponses.ToolChoice,
   Schema.Struct({ type: Schema.tag("image_generation") }),
 ])
 
+const OpenAIResponsesInputItem = Schema.Union([
+  OpenResponses.InputItem,
+  OpenAIResponsesHostedToolItem,
+  OpenResponses.ConfigurationUpdate,
+])
+
 const OpenAIResponsesCoreFields = {
   ...OpenResponses.coreFields,
-  input: Schema.Array(Schema.Union([OpenResponses.InputItem, OpenAIResponsesHostedToolItem])),
+  input: Schema.Array(OpenAIResponsesInputItem),
   tools: optionalArray(OpenAIResponsesTools),
   tool_choice: Schema.optional(OpenAIResponsesToolChoice),
+  context_management: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        type: Schema.Literal("compaction"),
+        compact_threshold: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
+      }),
+    ),
+  ),
 }
 
 const OpenAIResponsesBody = Schema.Struct({
@@ -86,11 +130,28 @@ const OpenAIResponsesBody = Schema.Struct({
 })
 export type OpenAIResponsesBody = Schema.Schema.Type<typeof OpenAIResponsesBody>
 
+/** Request control, never conversation content. */
+export const CompactionTrigger = Schema.Struct({ type: Schema.Literal("compaction_trigger") })
+const CheckpointBody = Schema.Struct({
+  ...OpenAIResponsesBody.fields,
+  input: Schema.Array(Schema.Union([OpenAIResponsesInputItem, CompactionTrigger])),
+})
+
 const adapter = {
   id: ADAPTER,
   name: NAME,
   restoreHostedToolItem: (item: unknown) => (Schema.is(OpenAIResponsesHostedToolItem)(item) ? item : undefined),
 } satisfies OpenResponses.ProviderAdapter
+
+// GPT-6 Astra, Sol, and Luna accept `configuration_update` only in standard mode (not `reasoning.mode: "pro"` or
+// `-pro` slugs), and never alongside automatic `context_management` compaction.
+const supportsEffortUpdates = (request: LLMRequest) => {
+  if (request.providerOptions?.contextManagement !== undefined) return false
+  if (Schema.is(Schema.Struct({ mode: Schema.Literal("pro") }))(request.http?.body?.reasoning)) return false
+  const override = request.model.compatibility?.supportsEffortUpdates
+  if (override !== undefined) return override
+  return /(?:^|\/)gpt-6-(?:astra|sol|luna)$/i.test(request.model.id)
+}
 
 const nativeImageToolInput = (tool: ToolDefinition) => {
   const native = tool.native?.openai
@@ -102,22 +163,40 @@ const nativeImageTool = (tool: ToolDefinition) => {
   return Schema.is(OpenAIResponsesImageGenerationTool)(native) ? native : undefined
 }
 
-const lowerTool = Effect.fn("OpenAIResponses.lowerTool")(function* (tool: ToolDefinition, inputSchema: JsonSchema) {
+const lowerTool = Effect.fn("OpenAIResponses.lowerTool")(function* (tool: ToolDefinition) {
   const native = nativeImageToolInput(tool)
   if (native !== undefined) {
     if (Schema.is(OpenAIResponsesImageGenerationTool)(native)) return native
     return yield* ProviderShared.invalidRequest("OpenAI Responses image generation tool options are invalid")
   }
-  return yield* OpenResponses.lowerTool(NAME, tool, inputSchema)
+  return yield* OpenResponses.lowerTool(NAME, tool)
 })
 
-const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>, tools: ReadonlyArray<ToolDefinition>) =>
+// Native namespaces hold only function tools, so deeper levels flatten into
+// the leaf names the same way non-native protocols flatten the whole tree.
+const lowerToolEntry = Effect.fn("OpenAIResponses.lowerToolEntry")(function* (tool: ToolEntry) {
+  if (tool.type === "tool") return yield* lowerTool(tool)
+  // OpenAI requires a namespace description; fall back to a generic one so a
+  // missing description never blocks the request.
+  return {
+    type: "namespace" as const,
+    name: tool.name,
+    description: tool.description ?? `Tools in the ${tool.name} namespace.`,
+    tools: yield* Effect.forEach(ProviderShared.flattenTools(tool.tools), (leaf) =>
+      OpenResponses.lowerTool(NAME, leaf),
+    ),
+  }
+})
+
+const lowerTools = (request: LLMRequest) => Effect.forEach(request.tools, lowerToolEntry)
+
+const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>, tools: ReadonlyArray<ToolEntry>) =>
   ProviderShared.matchToolChoice(NAME, toolChoice, {
     auto: () => "auto" as const,
     none: () => "none" as const,
     required: () => "required" as const,
     tool: (name) =>
-      tools.some((tool) => tool.name === name && nativeImageTool(tool) !== undefined)
+      tools.some((tool) => tool.type === "tool" && tool.name === name && nativeImageTool(tool) !== undefined)
         ? ({ type: "image_generation" } as const)
         : { type: "function" as const, name },
   })
@@ -125,25 +204,46 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>, tool
 const decodeBody = ProviderShared.validateWith(Schema.decodeUnknownEffect(OpenAIResponsesBody))
 
 const fromRequest = Effect.fn("OpenAIResponses.fromRequest")(function* (request: LLMRequest) {
-  const body = yield* OpenResponses.fromRequestWithAdapter(
-    LLMRequest.update(request, { tools: [], toolChoice: undefined }),
-    adapter,
-  )
-  const toolSchemaCompatibility = request.model.compatibility?.toolSchema
-  const parallelToolCalls = OpenResponses.resolveParallelToolCalls(request)
+  const management = yield* ProviderShared.validateWith(
+    Schema.decodeUnknownEffect(Schema.UndefinedOr(ContextManagement)),
+  )(request.providerOptions?.contextManagement)
+  const options = OpenResponsesOptions.resolve(request)
+  const updates = resolveEffortUpdates(request, options.reasoningEffort)
   return yield* decodeBody({
-    ...body,
-    ...(parallelToolCalls === undefined ? {} : { parallel_tool_calls: parallelToolCalls }),
-    tools:
+    ...(yield* OpenResponses.lowerConversation(updates.request, adapter)),
+    ...OpenResponses.lowerGeneration(request, { ...options, reasoningEffort: updates.effort }),
+    context_management: management?.map((edit) => ({ type: edit.type, compact_threshold: edit.compactThreshold })),
+    tools: request.tools.length === 0 ? undefined : yield* lowerTools(request),
+    tool_choice:
       request.tools.length === 0
         ? undefined
-        : yield* Effect.forEach(request.tools, (tool) =>
-            lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
-          ),
-    tool_choice:
-      body.tool_choice ?? (request.toolChoice ? yield* lowerToolChoice(request.toolChoice, request.tools) : undefined),
+        : (OpenResponses.allowedToolChoice(request) ??
+          (request.toolChoice ? yield* lowerToolChoice(request.toolChoice, request.tools) : undefined)),
   })
 })
+
+const checkpointBody = {
+  schema: CheckpointBody,
+  from: Effect.fn("OpenAIResponses.checkpointBody")(function* (request: LLMRequest) {
+    const overlay = request.http?.body
+    // Complete history is required for stateless replay and SSE recovery. Raw input overrides bypass that contract.
+    if (
+      overlay?.input !== undefined ||
+      overlay?.previous_response_id !== undefined ||
+      overlay?.conversation !== undefined
+    )
+      return yield* ProviderShared.invalidRequest(
+        "Trigger compaction requires complete canonical history, not an input or continuation override",
+      )
+    if (overlay?.stream !== undefined && overlay.stream !== true)
+      return yield* ProviderShared.invalidRequest("Trigger compaction requires a streamed response")
+    const native = yield* fromRequest(request)
+    return {
+      ...native,
+      input: [...native.input, { type: "compaction_trigger" as const }],
+    }
+  }),
+}
 
 const hostedToolResult = Effect.fn("OpenAIResponses.hostedToolResult")(function* (item: ResponsesHostedTools.Item) {
   const isError = item.error !== undefined && item.error !== null
@@ -184,12 +284,11 @@ const HOSTED_TOOLS = {
   },
 } as const satisfies ResponsesHostedTools.Definitions
 
-const step = (state: OpenResponses.ParserState, event: OpenResponses.Event) => {
+const step = (state: OpenResponses.ParserState, input: OpenResponses.Event) => {
+  const event = OpenResponses.normalize(state, input)
   if (event.type === "response.reasoning_text.delta")
     return event.item_id !== undefined
-      ? Effect.succeed(
-          OpenResponses.onReasoningDelta(state, event, OpenResponses.outputItemID(state, event) ?? event.item_id),
-        )
+      ? Effect.succeed(OpenResponses.onReasoningDelta(state, event, event.item_id))
       : ProviderShared.eventError(ADAPTER, `${event.type} is missing item_id`)
   if (event.type === "response.output_item.done" && event.item && ResponsesHostedTools.isItem(event.item, HOSTED_TOOLS))
     return ResponsesHostedTools.onDone(state, event.item, HOSTED_TOOLS)
@@ -208,6 +307,7 @@ export const protocol = Protocol.make({
     step,
     terminal: OpenResponses.terminal,
   },
+  supportsEffortUpdates,
 })
 
 const endpoint = Endpoint.path<OpenAIResponsesBody>(PATH, { baseURL: DEFAULT_BASE_URL })
@@ -223,6 +323,10 @@ export const transport = channelTransport({
 })
 
 export const route = Route.make({
+  compact: {
+    endpoint: ResponsesCompaction.make(adapter, lowerTools),
+    trigger: ResponsesCheckpoint.make(checkpointBody),
+  },
   id: ADAPTER,
   provider: "openai",
   providerMetadataKey: "openai",

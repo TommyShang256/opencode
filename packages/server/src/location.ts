@@ -1,10 +1,9 @@
-import { Location } from "@opencode-ai/core/location"
-import { LocationServiceMap } from "@opencode-ai/core/location-services"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { Workspace } from "@opencode-ai/core/workspace"
-import { InvalidRequestError } from "@opencode-ai/protocol/errors"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Location } from "@opencode/core/location"
+import { LocationServiceMap } from "@opencode/core/location-services"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { InvalidRequestError } from "@opencode/protocol/errors"
+import { Effect, Layer, Schema } from "effect"
 import { HttpServerRequest } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
 import { missingSession } from "./handlers/session-error"
@@ -21,7 +20,6 @@ export function response<A, E, R>(data: Effect.Effect<A, E, R>) {
     return {
       location: new Location.Info({
         directory: location.directory,
-        workspaceID: location.workspaceID,
         project: location.project,
       }),
       data: yield* data,
@@ -38,29 +36,13 @@ export const sessionInfo = Effect.fnUntraced(function* (sessions: Session.Interf
   return yield* sessions.get(id).pipe(Effect.catchTag("Session.NotFoundError", missingSession))
 })
 
-export function withLoadedLocationServices<A, E>(
-  locations: Context.Service.Shape<typeof LocationServiceMap.Service>,
-  ref: Location.Ref,
-  effect: Effect.Effect<A, E, LocationServices>,
-) {
-  return Effect.scoped(
-    Effect.gen(function* () {
-      const context = yield* locations.contextEffectOption(ref)
-      if (Option.isNone(context)) return Option.none<A>()
-      return Option.some(yield* effect.pipe(Effect.provide(context.value)))
-    }),
-  )
-}
-
 export function requestRef(request: HttpServerRequest.HttpServerRequest): Location.Ref {
   const query = new URL(request.url, "http://localhost").searchParams
-  const workspaceID = query.get("location[workspace]") || request.headers["x-opencode-workspace"]
   const directory =
     query.get("location[directory]") ||
     (request.headers["x-opencode-directory"] ? decode(request.headers["x-opencode-directory"]) : process.cwd())
   return Location.Ref.make({
     directory: AbsolutePath.make(directory),
-    workspaceID: workspaceID ? Workspace.ID.make(workspaceID) : undefined,
   })
 }
 

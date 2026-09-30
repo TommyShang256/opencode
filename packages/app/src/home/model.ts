@@ -3,7 +3,10 @@ import { type HomeProjectSelection, useLayout } from "@/shell/state/layout"
 import { ServerConnection, useServers } from "@/runtime/server/registry"
 import { useTabs } from "@/shell/tabs/tabs"
 import { toggleHomeProjectSelection } from "@/shell/layout/helpers"
-import { createEffect, createMemo } from "solid-js"
+import { createEffect, createMemo, startTransition } from "solid-js"
+import type { SessionInfo } from "@opencode/client/promise"
+import { pathKey } from "@/workspaces/path-key"
+import { addProjects } from "./projects/add"
 
 export function createHomeController() {
   const layout = useLayout()
@@ -33,6 +36,31 @@ export function createHomeController() {
     const conn = list[0]
     if (conn) setSelection({ server: ServerConnection.key(conn) })
   })
+  createEffect(() => {
+    const ctx = focusedServerCtx()
+    const id = selectedProject()?.id
+    if (!ctx || !id || ctx.sdk.connection.status() !== "connected") return
+    // Selecting a project is the demand for its worktree inventory: the session filter spans its worktrees.
+    void ctx.sync.worktrees.list(id).then(() => ctx.sync.worktrees.refresh(id))
+  })
+  createEffect(() => {
+    // The project list is empty until the server store hydrates; clearing the restored
+    // selection against it would persist the loss.
+    if (!servers.hydrated()) return
+    const current = selection()
+    const directory = current.directory
+    if (!directory) return
+    const conn = servers.visible.find((conn) => ServerConnection.key(conn) === current.server)
+    if (!conn) return
+    if (
+      global
+        .ensureServerCtx(conn)
+        .projects.list()
+        .some((project) => pathKey(project.worktree) === pathKey(directory))
+    )
+      return
+    setSelection({ server: current.server })
+  })
 
   function setSelection(next: HomeProjectSelection) {
     layout.home.setSelection(next)
@@ -43,6 +71,18 @@ export function createHomeController() {
     ctx.projects.open(directory)
     ctx.projects.touch(directory)
     void tabs.newDraft({ server: ServerConnection.key(conn), directory })
+  }
+
+  function openProjectSession(conn: ServerConnection.Any, directory: string, session: SessionInfo) {
+    const ctx = global.ensureServerCtx(conn)
+    void ctx.data.session.message.sync(session.id).catch(() => undefined)
+    void startTransition(() => {
+      const tab = tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: session.id })
+      tabs.select(tab)
+      ctx.data.session.remember(session)
+      ctx.projects.open(directory)
+      ctx.projects.touch(directory)
+    })
   }
 
   return {
@@ -79,23 +119,8 @@ export function createHomeController() {
         setSelection(toggleHomeProjectSelection(selection(), key, directory))
       },
       add: (conn: ServerConnection.Any, directories: string[]) => {
-        const directory = directories[0]
+        const directory = addProjects(global.ensureServerCtx(conn), directories)
         if (!directory) return
-        const ctx = global.ensureServerCtx(conn)
-        directories.forEach((item) => {
-          if (ctx.projects.list().some((project) => project.worktree === item)) return
-          const location = { directory: item }
-          void ctx.sdk.api.file
-            .list({ path: ".", location })
-            .then(async (files) => {
-              // TODO: Initialize empty directories when V2 exposes a native Git init API.
-              return ctx.sdk.api.project.current({ location })
-            })
-            .then((project) => ctx.sync.child(item, { bootstrap: false })[1]("project", project.id))
-            .catch(() => undefined)
-          ctx.projects.open(item)
-        })
-        ctx.projects.touch(directory)
         setSelection({ server: ServerConnection.key(conn), directory })
       },
       openNewSession: () => {
@@ -105,6 +130,7 @@ export function createHomeController() {
         openProjectNewSession(conn, project.worktree)
       },
       openProjectNewSession,
+      openProjectSession,
     },
   }
 }

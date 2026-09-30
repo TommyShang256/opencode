@@ -3,8 +3,9 @@ import type {
   SessionMessageAssistant,
   SessionMessageAssistantTool,
   SessionMessageInfo,
-} from "@opencode-ai/client/promise"
+} from "@opencode/client/promise"
 import { storyDocument, storyTool } from "../storybook/current-session-scenarios"
+import { timelinePresets } from "./detail"
 import { createTimelineProjection, Timeline, TimelineRow } from "./projection"
 
 describe("current session timeline rows", () => {
@@ -96,7 +97,7 @@ describe("current session timeline rows", () => {
   })
 
   test("keeps CLI notice messages between the assistant steps they surround", () => {
-    const source = [
+    const source: SessionMessageInfo[] = [
       { id: "msg_user", type: "user", text: "run", time: { created: 1 } },
       { id: "msg_agent", type: "agent-switched", agent: "explore", time: { created: 2 } },
       {
@@ -134,6 +135,7 @@ describe("current session timeline rows", () => {
         type: "synthetic",
         text: "continue",
         description: "Continuing after restart",
+        metadata: { notice: "restart" },
         time: { created: 9 },
       },
       { id: "msg_skill", type: "skill", skill: "review", name: "Review", text: "instructions", time: { created: 10 } },
@@ -146,7 +148,7 @@ describe("current session timeline rows", () => {
         recent: "recent",
         time: { created: 11 },
       },
-    ] satisfies SessionMessageInfo[]
+    ]
     const result = Timeline.constructSessionMessageRows(source, true, { type: "idle" })
 
     expect(result.rows.map(TimelineRow.key)).toEqual([
@@ -329,6 +331,39 @@ describe("current session timeline rows", () => {
     expect(result.rows.flatMap((row) => (row._tag === "AssistantPart" ? [row.group.type] : []))).toEqual([
       "part",
       "part",
+    ])
+  })
+
+  test("keeps divider notices outside grouped context rows", () => {
+    const source = [
+      { id: "msg_user", type: "user", text: "move", time: { created: 1 } },
+      {
+        id: "msg_assistant",
+        type: "assistant",
+        agent: "build",
+        model: { id: "model", providerID: "provider" },
+        content: [storyTool("tool_read", "read", "completed", {})],
+        time: { created: 2, completed: 3 },
+      },
+      { id: "msg_moved", type: "location-switched", location: { directory: "/tmp/next" }, time: { created: 4 } },
+      { id: "msg_skill", type: "skill", skill: "review", name: "Review", text: "instructions", time: { created: 5 } },
+    ] satisfies SessionMessageInfo[]
+    const rows = Timeline.constructSessionMessageRows(
+      source,
+      false,
+      { type: "idle" },
+      undefined,
+      false,
+      false,
+      undefined,
+      timelinePresets.find((preset) => preset.id === "compact")!.value,
+    ).rows
+
+    expect(rows.map(TimelineRow.key)).toEqual([
+      "user-message:msg_user",
+      "assistant-part:context:context:msg_assistant:tool_read",
+      "notice:msg_moved",
+      "assistant-part:context:message:msg_skill",
     ])
   })
 
@@ -691,6 +726,13 @@ describe("current session timeline rows", () => {
             state: { status: "running", input: {}, metadata: { files: [] } },
             time: { created: 10 },
           },
+          {
+            type: "tool",
+            id: "tool_write_1",
+            name: "write",
+            state: { status: "running", input: {}, metadata: { files: [] } },
+            time: { created: 11 },
+          },
         ],
         time: { created: 2, completed: 8 },
       },
@@ -716,14 +758,11 @@ describe("current session timeline rows", () => {
       {
         type: "file",
         key: "part:msg_assistant:tool_patch_3",
-        refs: [{ messageID: "msg_assistant", partID: "tool_patch_3" }],
-      },
-      {
-        type: "file",
-        key: "part:msg_assistant:tool_edit_1",
         refs: [
+          { messageID: "msg_assistant", partID: "tool_patch_3" },
           { messageID: "msg_assistant", partID: "tool_edit_1" },
           { messageID: "msg_assistant", partID: "tool_edit_2" },
+          { messageID: "msg_assistant", partID: "tool_write_1" },
         ],
       },
     ])
@@ -790,8 +829,8 @@ describe("current session timeline rows", () => {
   test.each([
     { shell: false, edit: false, types: ["context"] },
     { shell: true, edit: false, types: ["part", "context"] },
-    { shell: false, edit: true, types: ["context", "file", "part", "file", "context"] },
-    { shell: true, edit: true, types: ["part", "file", "part", "file", "context"] },
+    { shell: false, edit: true, types: ["context", "file", "context"] },
+    { shell: true, edit: true, types: ["part", "file", "context"] },
   ])("keeps tools expanded by settings outside collapsed groups ($shell, $edit)", ({ shell, edit, types }) => {
     const source = [
       { id: "msg_user", type: "user", text: "work", time: { created: 1 } },

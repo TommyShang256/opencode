@@ -1,18 +1,18 @@
-import { type LLMEvent, type ProviderMetadata, type ToolResultValue } from "@opencode-ai/ai"
-import type { Agent } from "@opencode-ai/schema/agent"
-import type { Model } from "@opencode-ai/schema/model"
-import type { RelativePath } from "@opencode-ai/schema/schema"
-import type { Snapshot } from "@opencode-ai/schema/snapshot"
+import { type LLMEvent, type ProviderMetadata, type ToolResultValue } from "@opencode/ai"
+import type { Agent } from "@opencode/schema/agent"
+import type { Model } from "@opencode/schema/model"
+import type { RelativePath } from "@opencode/schema/schema"
+import type { Snapshot } from "@opencode/schema/snapshot"
 import { Effect, Fiber, Iterable } from "effect"
-import { isArrayNonEmpty, isReadonlyArrayNonEmpty } from "effect/Array"
+import { isReadonlyArrayNonEmpty } from "effect/Array"
 import { Bus } from "../../bus.js"
 import { SessionEvent } from "../event.js"
 import { SessionMessage } from "../message.js"
 import { SessionSchema } from "../schema.js"
-import { SessionError } from "@opencode-ai/schema/session-error"
-import { Money } from "@opencode-ai/schema/money"
+import { SessionError } from "@opencode/schema/session-error"
+import { Money } from "@opencode/schema/money"
 import { SessionUsage } from "../usage.js"
-import { Tool } from "@opencode-ai/schema/tool"
+import type { Tool } from "../../tool.js"
 
 type Input = {
   readonly sessionID: SessionSchema.ID
@@ -20,6 +20,7 @@ type Input = {
   readonly model: Model.Ref
   readonly providerMetadataKey: string
   readonly snapshot?: Snapshot.ID
+  readonly started: number
   readonly assistantMessageID: SessionMessage.ID
 }
 
@@ -91,10 +92,8 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   }
   const assistantMessageID = input.assistantMessageID
   let stepStarted = false
-  let stepFailed = false
   let providerFailed = false
   let outputStarted = false
-  let stepStreamed = false
   let stepFailure: SessionError.Error | undefined
   let stepSettlement: StepRecord["finish"]
 
@@ -107,14 +106,13 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       model: input.model,
       assistantMessageID,
       snapshot: input.snapshot,
+      started: input.started,
     })
     return assistantMessageID
   })
   const currentAssistantMessageID = () =>
     stepStarted ? Effect.succeed(assistantMessageID) : Effect.die(new Error("Tool event before assistant step start"))
   const streamed = Effect.fnUntraced(function* () {
-    if (stepStreamed) return
-    stepStreamed = true
     yield* bus.publish(SessionEvent.Step.Streamed, {
       sessionID: input.sessionID,
       assistantMessageID: yield* startAssistant(),
@@ -196,7 +194,14 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     const flush = Effect.fnUntraced(function* () {
       for (const id of Array.from(chunks.keys())) yield* end(id)
     })
-    return { start, append, end, flush, has: (id: string) => chunks.has(id) }
+    /** Publish batched deltas now, keeping every fragment open. */
+    const publishPending = Effect.fnUntraced(function* () {
+      for (const [id, current] of Array.from(chunks)) {
+        if (current.timer) yield* Fiber.interrupt(current.timer)
+        yield* publishDelta(id)
+      }
+    })
+    return { start, append, end, flush, publishPending, has: (id: string) => chunks.has(id) }
   }
 
   const text = fragments(
@@ -258,6 +263,13 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     }),
   )
 
+  // Deltas are batched, but block starts are not. Publishing held deltas first keeps each
+  // block's content ahead of the next block, so the published order matches the model's.
+  const publishPendingDeltas = Effect.fnUntraced(function* () {
+    yield* text.publishPending()
+    yield* reasoning.publishPending()
+  })
+
   const flushFragments = Effect.fnUntraced(function* () {
     yield* text.flush()
     yield* reasoning.flush()
@@ -279,6 +291,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     }
     tools.set(event.id, tool)
     yield* toolInput.start(event.id)
+    yield* publishPendingDeltas()
     yield* bus.publish(SessionEvent.Tool.Input.Started, {
       sessionID: input.sessionID,
       assistantMessageID,
@@ -368,9 +381,8 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     readonly snapshot?: Snapshot.ID
     readonly files?: readonly RelativePath[]
   }) {
-    if (stepFailed || stepFailure === undefined) return
+    if (stepFailure === undefined) return
     const assistantMessageID = yield* startAssistant()
-    stepFailed = true
     yield* bus.publish(SessionEvent.Step.Failed, {
       sessionID: input.sessionID,
       assistantMessageID,
@@ -394,6 +406,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       case "text-start":
         outputStarted = true
         const startedTextOrdinal = yield* text.start(event.id, providerState(event.providerMetadata))
+        yield* publishPendingDeltas()
         yield* bus.publish(SessionEvent.Text.Started, {
           sessionID: input.sessionID,
           assistantMessageID: yield* startAssistant(),
@@ -409,6 +422,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       case "reasoning-start":
         outputStarted = true
         const startedReasoningOrdinal = yield* reasoning.start(event.id, providerState(event.providerMetadata))
+        yield* publishPendingDeltas()
         yield* bus.publish(SessionEvent.Reasoning.Started, {
           sessionID: input.sessionID,
           assistantMessageID: yield* startAssistant(),
@@ -549,7 +563,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   const waitForClient = Effect.fnUntraced(function* (id: string, admitted?: { readonly input: unknown }) {
     const tool = tools.get(id)
     if (!tool?.called || tool.settled) return yield* Effect.die(new Error(`Client wait outside running call: ${id}`))
-    if (admitted) tool.input = admitted.input
+    if (admitted) tool.input = asRecord(admitted.input)
     yield* bus.publish(SessionEvent.Tool.WaitingClient, {
       sessionID: input.sessionID,
       assistantMessageID,
@@ -572,20 +586,15 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
   })
 
   /** Publishes one canonical terminal event for a locally executed tool call. */
-  const toolExecution = Effect.fnUntraced(function* (id: string, name: string, result: Tool.Result) {
+  const toolExecution = Effect.fnUntraced(function* (id: string, name: string, result: Tool.NormalizedResult) {
     const tool = tools.get(id)
     if (!tool?.called) return yield* Effect.die(new Error(`Tool execution before call: ${id}`))
     if (tool.name !== name)
       return yield* Effect.die(new Error(`Tool execution name changed for ${id}: ${tool.name} -> ${name}`))
     if (tool.settled) return yield* Effect.die(new Error(`Duplicate tool execution: ${id}`))
     tool.settled = true
-    const content =
-      typeof result.content === "string"
-        ? [{ type: "text" as const, text: result.content }]
-        : result.content === undefined
-          ? []
-          : [...result.content]
-    if (!isArrayNonEmpty(content)) return yield* Effect.die(new Error(`Tool execution has no content: ${id}`))
+    const content = result.content
+    if (!isReadonlyArrayNonEmpty(content)) return yield* Effect.die(new Error(`Tool execution has no content: ${id}`))
     yield* bus.publish(SessionEvent.Tool.Success, {
       sessionID: input.sessionID,
       assistantMessageID,

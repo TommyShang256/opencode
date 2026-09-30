@@ -3,27 +3,27 @@ import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
-import { Agent } from "@opencode-ai/core/agent"
-import { Bus } from "@opencode-ai/core/bus"
-import { Database } from "@opencode-ai/core/database/database"
-import { AppNodeBuilder } from "@opencode-ai/core/effect/app-node-builder"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import { Model } from "@opencode-ai/core/model"
-import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
-import { Provider } from "@opencode-ai/core/provider"
-import { AbsolutePath } from "@opencode-ai/core/schema"
-import { Session } from "@opencode-ai/core/session"
-import { SessionEvent } from "@opencode-ai/core/session/event"
-import { SessionExecution } from "@opencode-ai/core/session/execution"
-import { SessionInbox } from "@opencode-ai/core/session/inbox"
-import { SessionMessage } from "@opencode-ai/core/session/message"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
-import { SessionRevert } from "@opencode-ai/core/session/revert"
-import { Snapshot } from "@opencode-ai/core/snapshot"
-import { Money } from "@opencode-ai/schema/money"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Global } from "@opencode-ai/util/global"
+import { Agent } from "@opencode/core/agent"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import { Model } from "@opencode/core/model"
+import { Plugin } from "@opencode/core/plugin"
+import { Provider } from "@opencode/core/provider"
+import { AbsolutePath } from "@opencode/core/schema"
+import { Session } from "@opencode/core/session"
+import { SessionEvent } from "@opencode/core/session/event"
+import { SessionExecution } from "@opencode/core/session/execution"
+import { SessionInbox } from "@opencode/core/session/inbox"
+import { SessionMessage } from "@opencode/core/session/message"
+import { SessionProjector } from "@opencode/core/session/projector"
+import { Snapshot } from "@opencode/core/snapshot"
+import { Money } from "@opencode/schema/money"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
 import { tempGlobalLayer } from "./fixture/global"
+import { offlineModels } from "./fixture/models"
 import { tmpdirScoped } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -34,6 +34,7 @@ const it = testEffect(
       Bus.node.replace(Bus.configured({ persist: true })),
       Global.node.replace(tempGlobalLayer),
       SessionExecution.node.replace(SessionExecution.noopLayer),
+      offlineModels,
     ],
   ),
 )
@@ -61,13 +62,10 @@ describe("Session.revert files", () => {
         const created = yield* session.create({ location: { directory: AbsolutePath.make(directory) } })
         const prompt = yield* session.prompt({ sessionID: created.id, text: "Rename the file", resume: false })
         yield* SessionInbox.promote(database.db, bus, created.id, "steer")
-        const services = LocationServiceMap.Service.get(created.location)
-        const revert = yield* SessionRevert.Service.pipe(Effect.provide(services))
-        expect(yield* SessionRevert.Service.pipe(Effect.provide(services))).toBe(revert)
 
         yield* Effect.gen(function* () {
-          const plugins = yield* PluginSupervisor.Service
-          yield* plugins.flush
+          const plugins = yield* Plugin.Service
+          yield* plugins.awaitActivation
           const snapshot = yield* Snapshot.Service
           const before = yield* snapshot.capture()
           if (!before) throw new Error("Initial snapshot missing")
@@ -78,6 +76,7 @@ describe("Session.revert files", () => {
             agent: Agent.defaultID,
             model: { id: Model.ID.make("test-model"), providerID: Provider.ID.make("test-provider") },
             snapshot: before,
+            started: 0,
           })
           yield* Effect.promise(() => fs.rename(original, renamed))
           const after = yield* snapshot.capture()

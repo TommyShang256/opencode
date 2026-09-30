@@ -1,16 +1,20 @@
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Global } from "@opencode-ai/util/global"
-import { run } from "@opencode-ai/tui"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { Global } from "@opencode/util/global"
+import { run } from "@opencode/tui"
 import { Commands } from "../commands"
 import { Runtime } from "../../framework/runtime"
 import { Config } from "../../config"
-import { Context, Effect, FileSystem, Option, Queue } from "effect"
+import { Context, Effect, Fiber, FileSystem, Option, Queue } from "effect"
 import { ServerConnection } from "../../services/server-connection"
 import { Updater } from "../../services/updater"
 import { UpdatePreflight } from "../../services/update-preflight"
-import { Npm } from "@opencode-ai/util/npm"
-import { OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
+import { Npm } from "@opencode/util/npm"
+import { OPENCODE_ARTIFACT, OPENCODE_CHANNEL, OPENCODE_VERSION } from "../../version"
 import { Env } from "../../env"
+import { Service } from "@opencode/client/effect/service"
+import { OpenCode } from "@opencode/client/promise"
+import { findSession } from "../../session-target"
+import { errorMessage } from "../../util/error"
 
 export default Runtime.handler(Commands, (input) =>
   Effect.gen(function* () {
@@ -46,8 +50,24 @@ export default Runtime.handler(Commands, (input) =>
         Effect.promise(() => preflight.fail("OpenCode update could not start the new background service")),
       ),
     )
+    const session = Option.getOrUndefined(input.session)
+    // A missing --session ID becomes the ID of the session the first prompt creates.
+    const sessionExists =
+      session !== undefined &&
+      (yield* Effect.tryPromise({
+        try: () =>
+          findSession(OpenCode.make({ baseUrl: server.endpoint.url, headers: Service.headers(server.endpoint) }), session),
+        catch: (cause) => new Error(errorMessage(cause)),
+      })) !== undefined
     const updater = yield* Updater.Service
-    yield* updater.check().pipe(Effect.forkScoped)
+    let installing: string | undefined
+    const updateListeners = new Set<(version: string) => void>()
+    const update = yield* updater
+      .run((version) => {
+        installing = version
+        updateListeners.forEach((notify) => notify(version))
+      })
+      .pipe(Effect.ensuring(Effect.sync(() => (installing = undefined))), Effect.forkScoped)
     preflight.loading()
     const config = yield* Config.Service
     const npm = yield* Npm.Service
@@ -59,7 +79,7 @@ export default Runtime.handler(Commands, (input) =>
     const service = server.service
     yield* run({
       app: {
-        name: process.env.OPENCODE_CLIENT ?? "cli",
+        name: process.env.OPENCODE_CLIENT ?? OPENCODE_ARTIFACT,
         version: OPENCODE_VERSION,
         channel: process.env.OPENCODE_TUI_CHANNEL ?? OPENCODE_CHANNEL,
       },
@@ -74,7 +94,8 @@ export default Runtime.handler(Commands, (input) =>
       },
       args: {
         continue: input.continue,
-        sessionID: Option.getOrUndefined(input.session),
+        sessionID: sessionExists ? session : undefined,
+        newSessionID: sessionExists ? undefined : session,
         prompt: Option.getOrUndefined(input.prompt),
         auto: input.auto || input.yolo || input.dangerouslySkipPermissions,
       },
@@ -83,13 +104,26 @@ export default Runtime.handler(Commands, (input) =>
         get: () => runPromise(config.get()),
         update: (update) => runPromise(config.update(update)),
       },
-      packages: {
-        resolve: (spec, install = true) =>
+      updater: {
+        remote: requestedServer !== undefined,
+        subscribe: (notify, signal) =>
           runPromise(
-            (install ? npm.add(spec, { subpaths: ["tui"] }) : npm.resolve(spec, { subpaths: ["tui"] })).pipe(
-              Effect.map((result) => result.entrypoint),
+            Fiber.join(update).pipe(
+              Effect.flatMap((result) => (result === undefined ? Effect.void : Effect.sync(() => notify(result)))),
             ),
+            { signal },
           ),
+        check: (signal, notify) => {
+          if (installing) notify(installing)
+          updateListeners.add(notify)
+          return runPromise(Fiber.join(update).pipe(Effect.flatMap(() => updater.check())), { signal }).finally(() =>
+            updateListeners.delete(notify),
+          )
+        },
+        apply: (version) => runPromise(updater.apply(version)),
+      },
+      packages: {
+        prepare: (spec, install = true) => runPromise(install ? npm.add(spec) : npm.resolve(spec)),
       },
       environment: requestedServer === undefined ? Env.session() : undefined,
       terminalHandoff: () => preflight.finish(),

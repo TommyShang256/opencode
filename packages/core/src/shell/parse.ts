@@ -166,7 +166,7 @@ export const scan = Effect.fnUntraced(function* (
   shell: string,
   cwd: string,
   options?: { portable?: boolean },
-) {
+): Effect.fn.Return<Result, Error> {
   if (options?.portable) return yield* scanPortable(command, shell, cwd)
   return yield* scanLegacy(command, shell, cwd)
 })
@@ -278,7 +278,7 @@ export const scanPortable = Effect.fnUntraced(function* (command: string, shell:
 const DELETE_COMMANDS = new Set(["rm", "rmdir", "unlink"])
 const SHELL_COMMANDS = new Set(["sh", "bash", "dash", "zsh", "ksh"])
 
-function deleteResources(words: ReadonlyArray<string>, resource: string, cwd: string) {
+function deleteResources(words: ReadonlyArray<string>, resource: string, cwd: string): string[] {
   const normalized = unwrap(words)
   const command = executable(normalized[0] ?? "")
   const redirects = truncationTargets(resource, cwd)
@@ -404,7 +404,7 @@ function shellScript(words: ReadonlyArray<string>) {
   return ""
 }
 
-function nestedDeleteResources(source: string, cwd: string) {
+function nestedDeleteResources(source: string, cwd: string): string[] {
   return lexicalCommands(source).flatMap((words) => deleteResources(words, source, cwd))
 }
 

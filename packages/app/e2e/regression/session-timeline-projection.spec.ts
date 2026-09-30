@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test"
+import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 import {
   assistantMessage,
   partUpdated,
@@ -14,7 +15,9 @@ test.describe("session timeline projection", () => {
     const first = "prt_patch_first"
     const second = "prt_patch_second"
     const timeline = await setupTimeline(page, {
-      settings: { editToolPartsExpanded: true },
+      settings: {
+        timelineDetail: { ...timelinePresets[2].value, edit: { placement: "separate", details: "collapsed" } },
+      },
       messages: [
         userMessage(),
         assistantMessage([
@@ -34,6 +37,7 @@ test.describe("session timeline projection", () => {
     const initial = page.locator(`[data-timeline-part-id="${first}"]`)
     const initialFile = initial.locator('[data-scope="apply-patch"] [data-type="update"]')
     await expect(initialFile).toBeVisible()
+    await expect(initialFile.getByRole("button")).toHaveAttribute("aria-expanded", "false")
     await initialFile.getByRole("button").click()
     await expect(initialFile.getByRole("button")).toHaveAttribute("aria-expanded", "true")
     await initial.evaluate((element) => {
@@ -110,8 +114,11 @@ test.describe("session timeline projection", () => {
       parentID: "msg_2000_second_user",
       created: 1700000006000,
     })
-    const timeline = await setupTimeline(page, { messages: [firstUser, aborted, failed, nextUser, nextAssistant] })
-    await timeline.send(status("idle"), 100)
+    const timeline = await setupTimeline(page, {
+      settings: { timelineDetail: timelinePresets[2].value },
+      messages: [firstUser, aborted, failed, nextUser, nextAssistant],
+    })
+    await timeline.send(status("idle"))
     const scroller = page.locator(".scroll-view__viewport", { has: page.locator("[data-timeline-row]") })
     await scroller.evaluate((element) => (element.scrollTop = 0))
 
@@ -127,6 +134,7 @@ test.describe("session timeline projection", () => {
     const longName = "Company Gateway Extra Long Context Model for Narrow Timeline Layouts"
     await setupTimeline(page, {
       viewport: { width: 420, height: 700 },
+      settings: { timelineDetail: { ...timelinePresets[2].value, notices: { placement: "separate" } } },
       sessionMessages: [
         {
           id: "msg_model_fast_nano",
@@ -157,6 +165,45 @@ test.describe("session timeline projection", () => {
     await expect(longNotice.locator('[data-slot="session-timeline-notice-variant"]')).toHaveCount(0)
     await expect(longNotice.locator("[title]")).toHaveAttribute("title", `Switched to ${longName}`)
     await expect.poll(() => longNotice.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true)
+  })
+
+  test("does not repeat a review comment file as an attachment", async ({ page }) => {
+    const message = userMessage([
+      userText("what's goin on here", { id: "prt_user_review_comment" }),
+      {
+        id: "prt_user_review_file",
+        type: "file",
+        mime: "text/plain",
+        filename: "LiveRuntime.ts",
+        url: "file:///repo/LiveRuntime.ts?start=14&end=32",
+      },
+      {
+        id: "prt_user_unrelated_file",
+        type: "file",
+        mime: "text/plain",
+        filename: "notes.txt",
+        url: "data:text/plain;base64,bm90ZXM=",
+      },
+    ])
+    message.metadata = {
+      displayText: "what's goin on here",
+      comments: [
+        {
+          path: "LiveRuntime.ts",
+          comment: "what's goin on here",
+          selection: { startLine: 14, startChar: 0, endLine: 32, endChar: 0 },
+          origin: "review",
+        },
+      ],
+    }
+
+    await setupTimeline(page, { messages: [message, assistantMessage()] })
+
+    const user = page.locator('[data-component="user-message"]')
+    await expect(user.getByText("LiveRuntime.ts:14-32", { exact: true })).toBeVisible()
+    const attachments = user.locator('[data-slot="user-message-attachments"]')
+    await expect(attachments.getByText("LiveRuntime.ts", { exact: true })).toHaveCount(0)
+    await expect(attachments.getByText("notes.txt", { exact: true })).toBeVisible()
   })
 })
 

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { OpenCode as EffectOpenCode, type AppApi as EffectApi } from "../src/effect"
-import type { Session } from "@opencode-ai/schema/session"
+import type { Session } from "@opencode/schema/session"
 import type { DiscoverOptions } from "../src/service"
 
 type EffectClient = Effect.Success<ReturnType<typeof EffectOpenCode.make>>
@@ -45,7 +45,6 @@ const promiseRemove: Promise<void> = promiseClient.session.instructions.entry.re
   sessionID: "ses_test",
   key: "review-notes",
 })
-const emptyRpcOutput: Awaited<ReturnType<typeof promiseClient.rpc.call>> = {}
 
 void [
   effectSession,
@@ -55,7 +54,6 @@ void [
   promiseList,
   promisePut,
   promiseRemove,
-  emptyRpcOutput,
   exactVersion,
   compatibleVersion,
 ]

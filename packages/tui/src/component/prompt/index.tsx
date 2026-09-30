@@ -32,7 +32,7 @@ import { stringWidth } from "../../util/string-width"
 import { createStore, produce, unwrap } from "solid-js/store"
 import { emptyPrompt, usePromptHistory, type PromptInfo, type PromptPartRef } from "../../prompt/history"
 import { saveDraft, takeDraft } from "./draft-stash"
-import { Skill } from "@opencode-ai/schema/skill"
+import { Skill } from "@opencode/schema/skill"
 import { computePromptTraits } from "../../prompt/traits"
 import { expandPastedTextPlaceholders, expandTrackedPastedText } from "../../prompt/part"
 import { usePromptStash } from "../../prompt/stash"
@@ -48,16 +48,17 @@ import { useConnected } from "../use-connected"
 import { useToast } from "../../ui/toast"
 import { createFadeIn } from "../../util/signal"
 import { DialogSkill } from "../dialog-skill"
-import { useArgs } from "../../context/args"
 import { useConfig } from "../../config"
 import { usePromptMove } from "./move"
 import { resolvePastedAttachments } from "./local-attachment"
 import { locationKey, useData } from "../../context/data"
 import { useLocation } from "../../context/location"
+import { useArgs } from "../../context/args"
 import { Keymap, type KeymapCommand } from "../../context/keymap"
+import { useInteractivity } from "../../context/interactivity"
 import { abbreviateHome } from "../../runtime"
 import { Slot } from "../../plugin/render"
-import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
+import type { SessionInbox } from "@opencode/schema/session-inbox"
 import {
   deduplicatePromptImages,
   preserveMentionlessPromptAttachments,
@@ -68,6 +69,7 @@ import { useDirectoryRecents } from "../../prompt/directory-recents"
 import { directoryRecentValue } from "../../prompt/directory-completion"
 import { useWorkingDirectoryActions } from "../../ui/working-directory-actions"
 import { truncateFilePath } from "../../ui/file-path"
+import { PromptMetadataRow } from "./metadata"
 
 export type PromptProps = {
   sessionID?: string
@@ -89,6 +91,8 @@ export type PromptProps = {
 export type PromptRef = {
   focused: boolean
   current: PromptInfo
+  mode: "normal" | "shell"
+  setMode(mode: "normal" | "shell"): void
   set(prompt: PromptInfo): void
   reset(): void
   blur(): void
@@ -102,10 +106,6 @@ const revealedPromptMetadata = new WeakSet<object>()
 function randomIndex(count: number) {
   if (count <= 0) return 0
   return Math.floor(Math.random() * count)
-}
-
-function fadeColor(color: RGBA, alpha: number) {
-  return RGBA.fromValues(color.r, color.g, color.b, color.a * alpha)
 }
 
 export function PromptInterruptStatus(props: {
@@ -190,10 +190,11 @@ export function Prompt(props: PromptProps) {
   let anchor: BoxRenderable
   const [inputTarget, setInputTarget] = createSignal<TextareaRenderable | undefined>()
 
+  const enabled = useInteractivity()
+  const disabled = () => props.disabled || !enabled()
   const leader = Keymap.useLeaderActive()
   const muted = () => leader() || props.muted
   const local = useLocal()
-  const args = useArgs()
   const paths = useTuiPaths()
   const terminalEnvironment = useTuiTerminalEnvironment()
   const clipboard = useClipboard()
@@ -206,6 +207,7 @@ export function Prompt(props: PromptProps) {
   const directoryRecents = useDirectoryRecents()
   const keymapCommands = Keymap.useCommands()
   const currentLocation = useLocation()
+  const args = useArgs()
   const config = useConfig().data
   const dialog = useDialog()
   const toast = useToast()
@@ -262,6 +264,7 @@ export function Prompt(props: PromptProps) {
   const [pendingDirectory, setPendingDirectory] = createSignal<string>()
   Keymap.createLayer(() => ({
     mode: "global",
+    enabled: !disabled(),
     commands: [
       {
         id: "session.cd",
@@ -336,8 +339,8 @@ export function Prompt(props: PromptProps) {
   let promptPartTypeId = 0
   const event = useEvent()
 
-  event.on("tui.prompt.append", (evt, { workspace }) => {
-    if (workspace !== (currentLocation.current?.workspaceID ?? data.location.default().workspaceID)) return
+  event.on("tui.prompt.append", (evt, { directory }) => {
+    if (directory !== (currentLocation.current?.directory ?? data.location.default().directory)) return
     if (!input || input.isDestroyed) return
     input.insertText(evt.data.text)
     setTimeout(() => {
@@ -351,8 +354,7 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.disabled) input.cursorColor = theme.background.surface.offset
-    if (!props.disabled) input.cursorColor = theme.text.default
+    input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
     if (config.cursor) input.cursorStyle = config.cursor
   })
 
@@ -375,12 +377,13 @@ export function Prompt(props: PromptProps) {
   function enqueuePaste(run: (changed: () => boolean) => Promise<void>) {
     pasteQueue = pasteQueue
       .then(async () => {
-        if (disposed || input.isDestroyed) return
+        if (disposed || input.isDestroyed || disabled()) return
         const before = { sessionID: props.sessionID, mode: store.mode, text: input.plainText }
         await run(
           () =>
             disposed ||
             input.isDestroyed ||
+            disabled() ||
             props.sessionID !== before.sessionID ||
             store.mode !== before.mode ||
             input.plainText !== before.text,
@@ -414,18 +417,6 @@ export function Prompt(props: PromptProps) {
       { defer: true },
     ),
   )
-
-  // Initialize agent/model/variant from the durable V2 Session state.
-  let syncedSessionID: string | undefined
-  createEffect(() => {
-    const sessionID = props.sessionID
-    if (!sessionID || sessionID === syncedSessionID || !local.model.ready) return
-    const session = data.session.get(sessionID)
-    if (!session) return
-    const agent = session.agent && local.agent.list().find((agent) => agent.id === session.agent)
-    if (agent && !args.agent) local.agent.set(agent.id)
-    syncedSessionID = sessionID
-  })
 
   const promptCommands = createMemo(() =>
     [
@@ -534,7 +525,7 @@ export function Prompt(props: PromptProps) {
           if (store.interrupt >= 2) {
             void client.api.session.interrupt({
               sessionID: props.sessionID,
-              continue: true,
+              resume: true,
             })
             setStore("interrupt", 0)
           }
@@ -628,11 +619,11 @@ export function Prompt(props: PromptProps) {
         },
       },
       {
-        title: "Move session",
-        desc: "Move to another project dir",
+        title: "Manage workspaces",
+        desc: "Manage workspaces",
         name: "session.move",
         category: "Session",
-        slash: { name: "move" },
+        slash: { name: "worktrees" },
         run: () => {
           move.open()
         },
@@ -651,15 +642,18 @@ export function Prompt(props: PromptProps) {
 
   Keymap.createLayer(() => ({
     mode: "global",
+    enabled: !disabled(),
     commands: promptCommands(),
   }))
 
   Keymap.createLayer(() => ({
     priority: 1,
+    enabled: !disabled(),
     bindings: ["prompt.queue"],
   }))
 
   Keymap.createLayer(() => ({
+    enabled: !disabled(),
     bindings: [
       "prompt.submit",
       "prompt.editor",
@@ -677,16 +671,23 @@ export function Prompt(props: PromptProps) {
 
   const ref: PromptRef = {
     get focused() {
-      return input.focused
+      return !disabled() && input.focused
     },
     get current() {
       return store.prompt
     },
+    get mode() {
+      return store.mode
+    },
     focus() {
+      if (disabled()) return
       input.focus()
     },
     blur() {
       input.blur()
+    },
+    setMode(mode) {
+      setStore("mode", mode)
     },
     set(prompt) {
       input.setText(prompt.text)
@@ -736,11 +737,13 @@ export function Prompt(props: PromptProps) {
 
   createEffect(() => {
     if (!input || input.isDestroyed) return
-    if (props.visible === false || props.disabled || dialog.stack.length > 0) {
+    if (props.visible === false || disabled() || dialog.stack.length > 0) {
       if (input.focused) input.blur()
+      input.focusable = false
       return
     }
 
+    input.focusable = true
     // Slot/plugin updates can remount the background prompt while a dialog is open.
     // Keep focus with the dialog and let the prompt reclaim it after the dialog closes.
     if (!input.focused) input.focus()
@@ -936,13 +939,14 @@ export function Prompt(props: PromptProps) {
 
   Keymap.createLayer(() => ({
     mode: "global",
+    enabled: !disabled(),
     commands: stashCommands(),
   }))
 
   Keymap.createLayer(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !props.disabled,
+      enabled: inputTarget() !== undefined && !disabled(),
       bindings: ["prompt.paste"],
     }
   })
@@ -950,7 +954,7 @@ export function Prompt(props: PromptProps) {
   Keymap.createLayer(() => {
     return {
       target: inputTarget,
-      enabled: inputTarget() !== undefined && !props.disabled && store.prompt.text !== "",
+      enabled: inputTarget() !== undefined && !disabled() && store.prompt.text !== "",
       bindings: ["prompt.clear"],
     }
   })
@@ -962,7 +966,7 @@ export function Prompt(props: PromptProps) {
         cursorVersion()
         return (
           inputTarget() !== undefined &&
-          !props.disabled &&
+          !disabled() &&
           store.mode === "normal" &&
           !auto()?.visible &&
           input?.visualCursor.offset === 0
@@ -986,7 +990,7 @@ export function Prompt(props: PromptProps) {
     return {
       priority: 1,
       target: inputTarget,
-      enabled: inputTarget() !== undefined && store.mode === "shell",
+      enabled: inputTarget() !== undefined && !disabled() && store.mode === "shell",
       commands: [
         { bind: "escape", title: "Exit shell mode", group: "Prompt", run: () => setStore("mode", "normal") },
         {
@@ -1005,7 +1009,7 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
-        return inputTarget() !== undefined && store.mode === "shell" && input?.visualCursor.offset === 0
+        return inputTarget() !== undefined && !disabled() && store.mode === "shell" && input?.visualCursor.offset === 0
       })(),
       commands: [
         { bind: "backspace", title: "Exit shell mode", group: "Prompt", run: () => setStore("mode", "normal") },
@@ -1019,7 +1023,7 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
-        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
+        return inputTarget() !== undefined && !disabled() && !auto()?.visible && input !== undefined
       })(),
       commands: [
         {
@@ -1055,7 +1059,7 @@ export function Prompt(props: PromptProps) {
       target: inputTarget,
       enabled: (() => {
         cursorVersion()
-        return inputTarget() !== undefined && !props.disabled && !auto()?.visible && input !== undefined
+        return inputTarget() !== undefined && !disabled() && !auto()?.visible && input !== undefined
       })(),
       commands: [
         {
@@ -1090,6 +1094,7 @@ export function Prompt(props: PromptProps) {
 
   let submitting = false
   async function submit(delivery: SessionInbox.Delivery = "steer") {
+    if (disabled()) return false
     // Prevent overlapping invocations (e.g. a double-pressed Enter, or the
     // input's native onSubmit racing another dispatch). Without this guard,
     // a second call slips past the empty-input check before the first call
@@ -1113,32 +1118,12 @@ export function Prompt(props: PromptProps) {
       setStore("prompt", "text", input.plainText)
       syncExtmarksWithPromptParts()
     }
-    if (props.disabled) return false
     if (move.creating()) return false
     if (auto()?.visible) return false
     const trimmed = store.prompt.text.trim()
-    if (!trimmed) return delivery === "steer" ? (await props.onEmptySubmit?.()) === true : false
-    if (
-      delivery === "queue" &&
-      (store.mode === "shell" || trimmed === "exit" || trimmed === "quit" || trimmed === ":q")
-    ) {
-      toast.show({ message: "This prompt cannot be queued", variant: "warning" })
-      return false
-    }
-    if (trimmed === "exit" || trimmed === "quit" || trimmed === ":q") {
-      void exit()
-      return true
-    }
-    const slash = argumentSlash(store.prompt.text, keymapCommands())
-    if (slash) {
-      if (delivery === "queue") {
-        toast.show({ message: "This prompt cannot be queued", variant: "warning" })
-        return false
-      }
-      clearPrompt()
-      await slash.command.run(slash.input)
-      return true
-    }
+    if (!trimmed && (!props.sessionID || store.mode === "shell" || delivery === "queue"))
+      return delivery === "steer" ? (await props.onEmptySubmit?.()) === true : false
+    const exitWord = trimmed === "exit" || trimmed === "quit" || trimmed === ":q"
     const inputText = expandTrackedPastedText(
       store.prompt.text,
       input.extmarks.getAllForTypeId(promptPartTypeId).flatMap((extmark) => {
@@ -1149,20 +1134,24 @@ export function Prompt(props: PromptProps) {
         return [{ start: extmark.start, end: extmark.end, text: part.text }]
       }),
     )
+    const slash = argumentSlash(inputText, keymapCommands())
+    if (delivery === "queue" && (store.mode === "shell" || exitWord || slash)) {
+      toast.show({ message: "This prompt cannot be queued", variant: "warning" })
+      return false
+    }
+    if (exitWord) {
+      void exit()
+      return true
+    }
+    if (slash) {
+      clearPrompt()
+      await slash.command.run(slash.input)
+      return true
+    }
     const slashHead = parseSlashHead(inputText, /\s/)
-    const isSkill =
-      !(store.prompt.skills?.length ?? 0) &&
-      slashHead !== undefined &&
-      (data.location.skill.list(currentLocation.ref) ?? []).some(
-        (skill) => skill.slash === true && skill.id === slashHead.name,
-      )
     const isCommand =
       slashHead !== undefined &&
       (data.location.command.list(currentLocation.ref) ?? []).some((command) => command.name === slashHead.name)
-    if (delivery === "queue" && isSkill) {
-      toast.show({ message: "Skills cannot be queued", variant: "warning" })
-      return false
-    }
     const editorSelection = editorContext()
     const pendingEditorSelection = editorSelection && editor.labelState() === "pending" ? editorSelection : undefined
     if (delivery === "queue" && pendingEditorSelection) {
@@ -1176,7 +1165,7 @@ export function Prompt(props: PromptProps) {
       void promptModelWarning()
       return false
     }
-    const usesModel = !props.sessionID || (store.mode !== "shell" && !isSkill)
+    const usesModel = !props.sessionID || store.mode !== "shell"
     if (usesModel && !local.model.available(selection)) {
       toast.show({
         title: "Model unavailable",
@@ -1194,8 +1183,10 @@ export function Prompt(props: PromptProps) {
     // snapshot unless the user has started typing something new.
     const currentMode = store.mode
     const entry = { ...store.prompt, mode: currentMode }
-    resetComposer()
-    props.onSubmit?.()
+    if (trimmed) {
+      resetComposer()
+      props.onSubmit?.()
+    }
     const restoreEntry = () => {
       if (disposed || input.isDestroyed || input.plainText !== "") return
       input.setText(entry.text)
@@ -1203,6 +1194,19 @@ export function Prompt(props: PromptProps) {
       setStore("mode", entry.mode ?? "normal")
       restoreExtmarksFromPrompt(entry)
       input.cursorOffset = entry.text.length
+    }
+    const fail = (title: string, error: unknown) => {
+      toast.show({ title, message: errorMessage(error), variant: "error" })
+      restoreEntry()
+    }
+    const attempt = async (title: string, run: () => Promise<unknown>) => {
+      return run().then(
+        () => true,
+        (error: unknown) => {
+          fail(title, error)
+          return false
+        },
+      )
     }
 
     const variant = selection.variant
@@ -1227,7 +1231,9 @@ export function Prompt(props: PromptProps) {
       // a local session record synchronously, so the navigation below happens
       // immediately — enter feels sent even while the create round-trip is in
       // flight. Sends against the new session gate on the request.
+      const newSessionID = args.takeNewSessionID()
       const created = data.session.create({
+        id: newSessionID,
         location: directory ? { directory } : location,
         agent: agent.id,
         model: {
@@ -1236,11 +1242,12 @@ export function Prompt(props: PromptProps) {
           variant,
         },
       })
+      if (newSessionID !== undefined) created.request.catch(() => args.restoreNewSessionID(newSessionID))
       sessionID = created.id
       session = data.session.get(created.id)
       newSession = {
         gate: created.request.then(async (info) => {
-          if (info.location.workspaceID === undefined && terminalEnvironment.variables !== undefined) {
+          if (terminalEnvironment.variables !== undefined) {
             await client.api.session.environment({ sessionID: created.id, variables: terminalEnvironment.variables })
           }
         }),
@@ -1268,63 +1275,71 @@ export function Prompt(props: PromptProps) {
     }
 
     const target = sessionID
-    history.append(entry)
-    const dispatch = (send: () => Promise<unknown>) => {
-      const setup = newSession
-      if (setup) void setup.gate.then(send).catch(setup.recover)
-      else void send()
+    const prepareAgent = async () => {
+      if (!session) {
+        await data.session.sync(target)
+        session = data.session.get(target)
+      }
+      if (session?.agent !== agent.id) {
+        await client.api.session.switchAgent({ sessionID: target, agent: agent.id })
+      }
     }
+    const commitModel = () => {
+      const model = { providerID: selection.providerID, id: selection.modelID, variant }
+      const cancelCommit = local.model.trackSessionCommit(target, model, agent.id)
+      return client.api.session.switchModel({ sessionID: target, model }).catch((error) => {
+        cancelCommit()
+        throw new Error(`Failed to switch model: ${errorMessage(error)}`, { cause: error })
+      })
+    }
+    const commitSelection = async () => {
+      await prepareAgent()
+      await commitModel()
+    }
+    if (!trimmed) {
+      // Blank Enter in an existing session commits the composer's agent and
+      // model selection, then hands off to the route (queued prompt promotion).
+      await attempt("Failed to prepare session", async () => {
+        await commitSelection()
+        await props.onEmptySubmit?.()
+      })
+      return true
+    }
+    history.append(entry)
     if (currentMode === "shell") {
       move.startSubmit()
-      dispatch(() => client.api.session.shell({ sessionID: target, command: inputText }))
+      const send = () => client.api.session.shell({ sessionID: target, command: inputText })
+      void (newSession ? newSession.gate.then(send).catch(newSession.recover) : send())
       setStore("mode", "normal")
     } else if (slashHead && isCommand) {
-      const send = () =>
-        client.api.session.command({
+      const send = async () => {
+        // Commands inherit the composer selection; command-specific overrides
+        // remain server-owned and run after this preparation.
+        await commitSelection()
+        return client.api.session.command({
           sessionID: target,
-          command: slashHead.name,
+          name: slashHead.name,
           text: slashHead.arguments,
           files: entry.files,
           agents: entry.agents,
           skills: entry.skills?.length ? entry.skills : undefined,
           delivery,
         })
-      const setup = newSession
-      void (setup ? setup.gate.then(send) : send()).catch((error) => {
-        if (setup) return setup.recover(error)
-        toast.show({ title: "Failed to run command", message: errorMessage(error), variant: "error" })
-        restoreEntry()
-      })
-    } else if (isSkill) {
-      move.startSubmit()
-      dispatch(() => client.api.session.skill({ sessionID: target, skill: slashHead.name }))
+      }
+      void (newSession ? newSession.gate.then(send) : send()).catch((error) =>
+        newSession ? newSession.recover(error) : fail("Failed to run command", error),
+      )
     } else {
       move.startSubmit()
-      try {
-        if (!session) {
-          await data.session.sync(target)
-          session = data.session.get(target)
-        }
-        if (session?.agent !== agent.id) {
-          await client.api.session.switchAgent({ sessionID: target, agent: agent.id })
-        }
-      } catch (error) {
-        toast.show({ title: "Failed to prepare session", message: errorMessage(error), variant: "error" })
-        restoreEntry()
-        return true
-      }
-      const model = { providerID: selection.providerID, id: selection.modelID, variant }
-      if (session?.revert) {
-        const error = await client.api.session.revert.commit({ sessionID: target }).then(
-          () => undefined,
-          (error) => error,
-        )
-        if (error) {
-          toast.show({ title: "Failed to commit revert", message: errorMessage(error), variant: "error" })
-          restoreEntry()
-          return false
-        }
-      }
+      if (!(await attempt("Failed to prepare session", prepareAgent))) return true
+      // Revert must settle before optimistic admission: its committed echo
+      // splices every local row at or after the boundary, which would include
+      // a freshly admitted prompt.
+      if (
+        session?.revert &&
+        !(await attempt("Failed to commit revert", () => client.api.session.revert.commit({ sessionID: target })))
+      )
+        return false
       if (pendingEditorSelection) {
         // Keep editor context hidden while admitting it before the corresponding user prompt.
         const send = () =>
@@ -1333,21 +1348,10 @@ export function Prompt(props: PromptProps) {
             text: formatEditorContext(pendingEditorSelection),
             resume: false,
           })
-        if (newSession) {
-          // Fold into the setup gate so the context still admits before the
-          // user prompt once the session exists.
-          newSession.gate = newSession.gate.then(send)
-        } else {
-          const error = await send().then(
-            () => undefined,
-            (error) => error,
-          )
-          if (error) {
-            toast.show({ title: "Failed to send editor context", message: errorMessage(error), variant: "error" })
-            restoreEntry()
-            return false
-          }
-        }
+        // Fold into the setup gate so the context still admits before the
+        // user prompt once the session exists.
+        if (newSession) newSession.gate = newSession.gate.then(send)
+        else if (!(await attempt("Failed to send editor context", send))) return false
       }
       // The data layer admits optimistically: the prompt renders immediately
       // and rolls back if the server rejects it, so submission does not wait
@@ -1362,26 +1366,14 @@ export function Prompt(props: PromptProps) {
           skills: entry.skills?.length ? entry.skills : undefined,
           delivery,
           gate: newSession?.gate,
-          prepare: () => {
-            // Commit the captured selection after earlier admissions, including
-            // compaction setup. Cached state may still precede their SSE echoes;
-            // the server makes an unchanged selection a no-op.
-            const cancelCommit = local.model.trackSessionCommit(target, model)
-            return client.api.session.switchModel({ sessionID: target, model }).catch((error) => {
-              cancelCommit()
-              throw new Error(`Failed to switch model: ${errorMessage(error)}`, { cause: error })
-            })
-          },
+          // Commit the captured selection after earlier admissions, including
+          // compaction setup. Cached state may still precede their SSE echoes;
+          // the server makes an unchanged selection a no-op.
+          prepare: commitModel,
         })
-        .catch((error) => {
-          if (newSession) return newSession.recover(error)
-          toast.show({ title: "Failed to send prompt", message: errorMessage(error), variant: "error" })
-          restoreEntry()
-        })
+        .catch((error) => (newSession ? newSession.recover(error) : fail("Failed to send prompt", error)))
       if (pendingEditorSelection) editor.markSelectionSent()
     }
-
-    sessionTabs.promote(target)
 
     // Optimistic admission puts the message in the store synchronously, so
     // the session view renders it on arrival.
@@ -1575,9 +1567,9 @@ export function Prompt(props: PromptProps) {
     },
   )
   const highlight = createMemo(() => {
-    if (muted()) return theme.border.default
+    if (muted()) return theme.border.base
     if (store.mode === "shell") return theme.text.action.primary.selected
-    return promptDisplay().agentColor ?? theme.border.default
+    return promptDisplay().agentColor ?? theme.border.base
   })
   const agentLabel = createMemo(() => (store.mode === "shell" ? "Shell" : promptDisplay().agentLabel))
   const animateMetadata = !revealedPromptMetadata.has(local)
@@ -1594,8 +1586,12 @@ export function Prompt(props: PromptProps) {
   createEffect(() => {
     if (agentLabel()) revealedPromptMetadata.add(local)
   })
-  const borderHighlight = createMemo(() => tint(theme.border.default, highlight(), agentMetaAlpha()))
-  const footerInput = () => ({ sessionID: props.sessionID, mode: store.mode })
+  const borderHighlight = createMemo(() => tint(theme.border.base, highlight(), agentMetaAlpha()))
+  const footerInput = () => ({
+    sessionID: props.sessionID,
+    mode: store.mode,
+    showDetails: store.interrupt === 0 || dimensions().width >= 80,
+  })
 
   const placeholderText = createMemo(() => {
     if (props.showPlaceholder === false) return undefined
@@ -1639,7 +1635,7 @@ export function Prompt(props: PromptProps) {
   })
 
   const spinnerDef = createMemo(() => {
-    const color = promptDisplay().agentColor ?? theme.border.default
+    const color = promptDisplay().agentColor ?? theme.border.base
     return {
       frames: createFrames({
         color,
@@ -1659,7 +1655,7 @@ export function Prompt(props: PromptProps) {
   })
   const maxHeight = createMemo(() => Math.max(6, Math.floor(dimensions().height / 3)))
 
-  const promptBg = createMemo(() => theme.raise(theme.background.surface.offset))
+  const promptBg = createMemo(() => theme.decrease(theme.background.raised.base))
 
   return (
     <>
@@ -1711,7 +1707,7 @@ export function Prompt(props: PromptProps) {
                           when={!failed()}
                           fallback={
                             <box width="100%" height="100%" alignItems="center" justifyContent="center">
-                              <text fg={theme.text.subdued}>No preview</text>
+                              <text fg={theme.text.muted}>No preview</text>
                             </box>
                           }
                         >
@@ -1743,7 +1739,7 @@ export function Prompt(props: PromptProps) {
                       openImagePreview(visibleImageAttachments().length)
                     }}
                   >
-                    <text fg={theme.text.subdued} wrapMode="none" truncate>
+                    <text fg={theme.text.muted} wrapMode="none" truncate>
                       +{imageAttachments().length - visibleImageAttachments().length} more
                     </text>
                   </box>
@@ -1753,9 +1749,9 @@ export function Prompt(props: PromptProps) {
             <textarea
               width="100%"
               placeholder={placeholderText()}
-              placeholderColor={theme.text.subdued}
-              textColor={muted() ? theme.text.subdued : theme.text.default}
-              focusedTextColor={muted() ? theme.text.subdued : theme.text.default}
+              placeholderColor={theme.text.muted}
+              textColor={muted() ? theme.text.muted : theme.text.base}
+              focusedTextColor={muted() ? theme.text.muted : theme.text.base}
               minHeight={1}
               maxHeight={maxHeight()}
               cursorStyle={config.cursor}
@@ -1768,18 +1764,19 @@ export function Prompt(props: PromptProps) {
               }}
               onCursorChange={() => setCursorVersion((value) => value + 1)}
               onKeyDown={(e: { preventDefault(): void }) => {
-                if (props.disabled) {
+                if (disabled()) {
                   e.preventDefault()
                   return
                 }
               }}
               onSubmit={() => {
+                if (disabled()) return
                 // IME: double-defer so the last composed character (e.g. Korean
                 // hangul) is flushed to plainText before we read it for submission.
                 setTimeout(() => setTimeout(() => submit(), 0), 0)
               }}
               onPaste={(event: PasteEvent) => {
-                if (props.disabled) {
+                if (disabled()) {
                   event.preventDefault()
                   return
                 }
@@ -1815,12 +1812,16 @@ export function Prompt(props: PromptProps) {
                 setTimeout(() => {
                   // setTimeout is a workaround and needs to be addressed properly
                   if (!input || input.isDestroyed) return
-                  input.cursorColor = theme.text.default
+                  input.cursorColor = disabled() ? theme.background.raised.base : theme.text.base
                   if (config.cursor) input.cursorStyle = config.cursor
                 }, 0)
               }}
               onMouseDown={(r: MouseEvent) => {
-                if (props.disabled || r.button !== 0) return
+                if (disabled()) {
+                  r.preventDefault()
+                  return
+                }
+                if (r.button !== 0) return
                 r.target?.focus()
                 const extmark = input.extmarks
                   .getAtOffset(input.cursorOffset)
@@ -1830,56 +1831,23 @@ export function Prompt(props: PromptProps) {
                 r.stopPropagation()
               }}
               focusedBackgroundColor="transparent"
-              cursorColor={props.disabled ? theme.background.surface.offset : theme.text.default}
+              cursorColor={disabled() ? theme.background.raised.base : theme.text.base}
               syntaxStyle={syntax()}
             />
             <box flexDirection="row" flexShrink={0} paddingTop={1} gap={1} justifyContent="space-between">
-              <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
-                <Show when={agentLabel()} fallback={<box height={1} />}>
-                  {(label) => (
-                    <>
-                      <text fg={fadeColor(highlight(), agentMetaAlpha())}>{label()}</text>
-                      <Show
-                        when={store.mode === "normal" && local.permission.mode === "auto" && dimensions().width >= 44}
-                      >
-                        <text fg={fadeColor(theme.text.subdued, agentMetaAlpha())}>auto</text>
-                      </Show>
-                      <Show when={store.mode === "normal" && dimensions().width >= 28}>
-                        <box flexDirection="row" gap={1} flexGrow={1} flexShrink={1} minWidth={0}>
-                          <text fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>·</text>
-                          <text
-                            flexShrink={1}
-                            minWidth={0}
-                            wrapMode="none"
-                            truncate
-                            fg={fadeColor(muted() ? theme.text.subdued : theme.text.default, modelMetaAlpha())}
-                          >
-                            {promptDisplay().modelLabel}
-                          </text>
-                          <Show when={dimensions().width >= 50}>
-                            <text flexShrink={0} fg={fadeColor(theme.text.subdued, modelMetaAlpha())}>
-                              {promptDisplay().providerLabel}
-                            </text>
-                          </Show>
-                          <Show when={promptDisplay().variant && dimensions().width >= 70}>
-                            <text fg={fadeColor(theme.text.subdued, variantMetaAlpha())}>·</text>
-                            <text>
-                              <span
-                                style={{
-                                  fg: fadeColor(theme.text.feedback.warning.default, variantMetaAlpha()),
-                                  bold: true,
-                                }}
-                              >
-                                {promptDisplay().variant}
-                              </span>
-                            </text>
-                          </Show>
-                        </box>
-                      </Show>
-                    </>
-                  )}
-                </Show>
-              </box>
+              <PromptMetadataRow
+                mode={store.mode}
+                agent={agentLabel()}
+                auto={local.permission.mode === "autoaccept"}
+                model={promptDisplay().modelLabel}
+                provider={promptDisplay().providerLabel}
+                variant={promptDisplay().variant}
+                muted={!!muted()}
+                highlight={highlight()}
+                agentAlpha={agentMetaAlpha()}
+                modelAlpha={modelMetaAlpha()}
+                variantAlpha={variantMetaAlpha()}
+              />
               <Show when={hasRightContent()}>
                 <box flexDirection="row" gap={1} alignItems="center">
                   {props.right}
@@ -1930,17 +1898,17 @@ export function Prompt(props: PromptProps) {
                   <Match when={status() === "running"}>
                     <box flexDirection="row" gap={1} flexGrow={1} justifyContent="flex-start">
                       <box marginLeft={1}>
-                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.subdued}>[⋯]</text>}>
+                        <Show when={config.animations ?? true} fallback={<text fg={theme.text.muted}>[⋯]</text>}>
                           <spinner color={spinnerDef().color} frames={spinnerDef().frames} interval={40} />
                         </Show>
                       </box>
                       <PromptInterruptStatus
                         armed={store.interrupt > 0}
                         animations={animationsEnabled()}
-                        text={theme.text.default}
-                        subdued={theme.text.subdued}
-                        warning={theme.text.feedback.warning.default}
-                        flash={theme.decrease(theme.text.feedback.warning.default, 2)}
+                        text={theme.text.base}
+                        subdued={theme.text.muted}
+                        warning={theme.text.feedback.warning.base}
+                        flash={theme.decrease(theme.text.feedback.warning.base, 2)}
                       />
                     </box>
                   </Match>
@@ -1949,7 +1917,7 @@ export function Prompt(props: PromptProps) {
                       <box paddingLeft={3} height={1} minHeight={0} flexShrink={1}>
                         <Spinner color={theme.hue.accent[500]}>
                           {progress()}
-                          <span style={{ fg: theme.text.subdued }}>{".".repeat(move.creatingDots())}</span>
+                          <span style={{ fg: theme.text.muted }}>{".".repeat(move.creatingDots())}</span>
                         </Spinner>
                       </box>
                     )}
@@ -1966,7 +1934,7 @@ export function Prompt(props: PromptProps) {
                       {(location) => (
                         <text
                           id="prompt.footer.location"
-                          fg={locationActions.hovered() ? theme.text.default : theme.text.subdued}
+                          fg={locationActions.hovered() ? theme.text.base : theme.text.muted}
                           wrapMode="none"
                           truncate
                           flexGrow={1}
@@ -1990,7 +1958,7 @@ export function Prompt(props: PromptProps) {
                     wrapMode="none"
                     truncate
                     flexShrink={1}
-                    fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.subdued}
+                    fg={editorContextLabelState() === "pending" ? theme.hue.accent[500] : theme.text.muted}
                   >
                     {file()}
                   </text>

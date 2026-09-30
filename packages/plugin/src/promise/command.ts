@@ -1,8 +1,8 @@
-import type { CommandApi } from "@opencode-ai/client/promise/api"
-import type { Command } from "@opencode-ai/schema/command"
-import type { PromptInput } from "@opencode-ai/schema/prompt-input"
-import type { Session } from "@opencode-ai/schema/session"
-import type { SessionInbox } from "@opencode-ai/schema/session-inbox"
+import type { CommandApi } from "@opencode/client/promise/api"
+import type { PromptInput } from "@opencode/schema/prompt-input"
+import type { Session } from "@opencode/schema/session"
+import type { SessionInbox } from "@opencode/schema/session-inbox"
+import type { Command } from "@opencode/schema/command"
 import type { Transform } from "./registration.js"
 
 export interface CommandInvocation {
@@ -18,11 +18,11 @@ export interface CommandDefinition {
   readonly execute: (input: CommandInvocation) => Promise<void>
 }
 
-export interface CommandDraft {
+export interface CommandEditor {
   add(definition: CommandDefinition): void
 }
 
 export interface CommandDomain extends Pick<CommandApi, "list"> {
-  readonly transform: Transform<CommandDraft>
+  readonly transform: Transform<CommandEditor>
   readonly reload: () => Promise<void>
 }

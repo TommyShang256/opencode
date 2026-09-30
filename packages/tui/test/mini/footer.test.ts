@@ -2,6 +2,7 @@ import { expect, test } from "bun:test"
 import { createTestRenderer } from "@opentui/core/testing"
 import { CliRenderEvents, RGBA, TextRenderable } from "@opentui/core"
 import path from "node:path"
+import { Writable } from "node:stream"
 import { coalesceProgressCommit, resolveRunAgent, RunFooter } from "../../src/mini/footer"
 import { createRunDemo } from "../../src/mini/demo"
 import { resolveMiniSettings } from "../../src/mini/runtime.boot"
@@ -10,6 +11,7 @@ import type { MiniSettingChange, MiniSettings, RunAgent, RunTuiConfig, StreamCom
 import { createTuiResolvedConfig } from "../fixture/tui-runtime"
 import { tmpdir } from "../fixture/fixture"
 import { createFooterApiFixture } from "./fixture/footer-api"
+import { getOpenCodeTheme } from "../../src/theme"
 
 function progress(input: Partial<StreamCommit> = {}): StreamCommit {
   return {
@@ -33,6 +35,52 @@ test("coalesces progress only within the same message and tool state", () => {
   )
 })
 
+test.each(["show", "hide"] as const)("tools setting %s controls tool and skill transcript", async (tools) => {
+  const app = await setup({ tools })
+  try {
+    app.footer.append({ kind: "user", text: "do the thing", phase: "start", source: "system" })
+    app.footer.append({
+      kind: "tool",
+      text: "running read",
+      phase: "start",
+      source: "tool",
+      tool: "read",
+      messageID: "msg_1",
+      partID: "prt_1",
+    })
+    app.footer.append({
+      kind: "system",
+      text: `→ Skill "demo"`,
+      phase: "start",
+      source: "system",
+      messageID: "msg_skill",
+      partID: "skill:demo",
+    })
+    app.footer.append({
+      kind: "assistant",
+      text: "all done",
+      phase: "progress",
+      source: "assistant",
+      messageID: "msg_2",
+      partID: "prt_text",
+    })
+    await app.footer.idle()
+    const text = app.externalOutput.takeText()
+    expect(text).toContain("do the thing")
+    expect(text).toContain("all done")
+    if (tools === "hide") {
+      expect(text).not.toContain("Read")
+      expect(text).not.toContain("Skill")
+      return
+    }
+    expect(text).toContain("-> Read")
+    expect(text).toContain("Skill")
+  } finally {
+    app.footer.destroy()
+    app.renderer.destroy()
+  }
+})
+
 test("falls back only when no agent is selected", () => {
   const agents: RunAgent[] = [
     { id: "task", name: "Task", mode: "subagent", hidden: false },
@@ -49,19 +97,35 @@ test("falls back only when no agent is selected", () => {
 async function setup(
   input: {
     mono?: boolean
+    tools?: MiniSettings["tools"]
     theme?: RunTuiConfig["theme"]
     startup?: { version: string; detail: string }
+    cursorRow?: number
     update?: (change: MiniSettingChange) => Promise<MiniSettings>
   } = {},
 ) {
   const mono = input.mono ?? true
+  const output: string[] = []
   const app = await createTestRenderer({
     width: 112,
     height: 24,
     screenMode: "split-footer",
     footerHeight: 4,
     externalOutputMode: "capture-stdout",
+    bufferedOutput: input.cursorRow ? "stdout" : "memory",
+    stdout: input.cursorRow
+      ? (new Writable({
+          write(chunk, _encoding, callback) {
+            output.push(chunk.toString())
+            callback()
+          },
+        }) as NodeJS.WriteStream)
+      : undefined,
   })
+  if (input.cursorRow) {
+    await app.renderer.setupTerminal()
+    await app.mockInput.pressKeys([`\x1b[${input.cursorRow};1R`])
+  }
   const footer = new RunFooter(app.renderer, {
     directory: () => "/project",
     findFiles: async () => [],
@@ -77,7 +141,7 @@ async function setup(
     theme: mono ? RUN_THEME_MONO : RUN_THEME_FALLBACK,
     tuiConfig: createTuiResolvedConfig({ theme: input.theme }),
     miniSettings: {
-      current: { ...resolveMiniSettings(), mono },
+      current: { ...resolveMiniSettings(), mono, ...(input.tools ? { tools: input.tools } : {}) },
       update: input.update,
     },
     onPermissionReply: () => {},
@@ -86,8 +150,24 @@ async function setup(
     onEditorOpen: async () => undefined,
     subscribeThemeSignal: () => () => {},
   })
-  return { ...app, footer }
+  return { ...app, footer, output }
 }
+
+test.each([1, 5, 24])("startup preserves the terminal prompt row from cursor row %s", async (cursorRow) => {
+  const app = await setup({ mono: false, startup: { version: "test", detail: "/project" }, cursorRow })
+  try {
+    await app.renderOnce()
+    app.footer.finishStartup()
+    await app.renderOnce()
+    // Inspect terminal cursor coordinates, not the footer-local render buffer.
+    const rows = Array.from(app.output.join("").matchAll(/\x1b\[(\d+);3H\x1b\[\?25h/g), (match) => Number(match[1]))
+    expect(rows.length).toBeGreaterThanOrEqual(2)
+    expect(new Set(rows).size).toBe(1)
+  } finally {
+    app.footer.destroy()
+    app.renderer.destroy()
+  }
+})
 
 test.each(["timer", "output", "close", "panel"] as const)(
   "startup stays editable and settles exactly once before %s",
@@ -179,7 +259,7 @@ test.each([false, true])("command menu uses its full height on first open (mono=
     expect(frame).toContain("Show status")
     expect(frame).toContain("Compact session")
     expect(frame).toContain("New session")
-    expect(frame).toContain("Skills")
+    expect(frame).toContain("Variant cycle")
   } finally {
     app.footer.destroy()
     app.renderer.destroy()
@@ -291,7 +371,10 @@ test("explicit theme refresh reloads custom colors without a palette event", asy
     for (const color of ["#123456", "#abcdef"]) {
       await Bun.write(
         path.join(tmp.path, "themes", "mini-refresh.json"),
-        JSON.stringify({ version: 2, dark: { text: { default: color } } }),
+        JSON.stringify({
+          base: { ...getOpenCodeTheme().base, text: { ...getOpenCodeTheme().base.text, base: color } },
+          dark: { hue: getOpenCodeTheme().dark.hue },
+        }),
       )
       await app.footer.refreshTheme()
       await app.renderOnce()

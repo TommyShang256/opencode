@@ -1,5 +1,5 @@
-import { PluginSupervisor } from "@opencode-ai/core/plugin/supervisor"
-import { ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
+import { ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
 
 export function pluginReadiness(error: () => ServiceUnavailableError) {

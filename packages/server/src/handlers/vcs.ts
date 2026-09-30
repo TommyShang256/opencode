@@ -1,14 +1,9 @@
-import { Vcs } from "@opencode-ai/core/vcs"
-import { ServiceUnavailableError } from "@opencode-ai/protocol/errors"
+import { Vcs } from "@opencode/core/vcs"
+import { ServiceUnavailableError } from "@opencode/protocol/errors"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { response } from "../location"
-import { pluginReadiness } from "./plugin-readiness"
-
-const flushPlugins = pluginReadiness(
-  () => new ServiceUnavailableError({ service: "vcs", message: "VCS initialization timed out" }),
-)
 
 export const VcsHandler = HttpApiBuilder.group(Api, "server.vcs", (handlers) =>
   Effect.gen(function* () {
@@ -24,7 +19,6 @@ export const VcsHandler = HttpApiBuilder.group(Api, "server.vcs", (handlers) =>
       .handle("vcs.base", () =>
         response(
           Effect.gen(function* () {
-            yield* flushPlugins
             const vcs = yield* Vcs.Service
             return yield* vcs
               .base()
@@ -40,7 +34,7 @@ export const VcsHandler = HttpApiBuilder.group(Api, "server.vcs", (handlers) =>
           }),
         ),
       )
-      .handle("vcs.branches", (ctx) =>
+      .handle("vcs.branch.list", (ctx) =>
         response(
           Effect.gen(function* () {
             const vcs = yield* Vcs.Service
@@ -51,7 +45,6 @@ export const VcsHandler = HttpApiBuilder.group(Api, "server.vcs", (handlers) =>
       .handle("vcs.diff", (ctx) =>
         response(
           Effect.gen(function* () {
-            yield* flushPlugins
             const vcs = yield* Vcs.Service
             return yield* vcs
               .diff(ctx.query.mode, { context: ctx.query.context, base: ctx.query.base })

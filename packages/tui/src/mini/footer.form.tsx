@@ -228,8 +228,8 @@ export function RunFormBody(props: {
     try {
       if (props.openExternal) await props.openExternal(field.url)
       else {
-        const { default: open } = await import("open")
-        await open(field.url)
+        const { openUrl } = await import("@opencode/util/open")
+        await openUrl(field.url)
       }
       setState((previous) => formSetExternalReady(previous, field.key))
     } catch {
@@ -438,7 +438,7 @@ export function RunFormBody(props: {
                           flexDirection="row"
                           gap={1}
                           alignItems="flex-start"
-                          onMouseOver={() => setState((previous) => formSetSelected(previous, index()))}
+                          onMouseMove={() => setState((previous) => formSetSelected(previous, index()))}
                           backgroundColor={active() ? props.theme.formfieldFocusedBg : "transparent"}
                           onMouseUp={() => choose(index())}
                         >
@@ -596,7 +596,7 @@ export function RunFormBody(props: {
               minWidth={0}
             >
               {state().submitting
-                ? "submitting..."
+                ? "submitting…"
                 : unsupported()
                   ? "esc dismiss"
                   : confirm()
@@ -625,7 +625,7 @@ export function RunFormBody(props: {
               wrapMode="none"
               flexShrink={0}
             >
-              {state().submitting ? "submitting..." : `enter ${action()}`}
+              {state().submitting ? "submitting…" : `enter ${action()}`}
             </text>
           </Show>
           <Show when={!state().submitting}>

@@ -14,7 +14,6 @@ import { ToolHandler } from "./handlers/tool"
 import { EventHandler } from "./handlers/event"
 import { AgentHandler } from "./handlers/agent"
 import { PluginHandler } from "./handlers/plugin"
-import { HealthHandler } from "./handlers/health"
 import { ServerHandler } from "./handlers/server"
 import { DebugHandler } from "./handlers/debug"
 import { PtyHandler } from "./handlers/pty"
@@ -32,10 +31,8 @@ import { VcsHandler } from "./handlers/vcs"
 import { EventFeed } from "./event-feed"
 import { MigrationHandler } from "./handlers/migration"
 import { ConfigHandler } from "./handlers/config"
-import { WorkspaceHandler } from "./handlers/workspace"
 
 export const handlers = Layer.mergeAll(
-  HealthHandler,
   ServerHandler,
   DebugHandler,
   MigrationHandler,
@@ -65,7 +62,6 @@ export const handlers = Layer.mergeAll(
   ShellHandler,
   ReferenceHandler,
   WorktreeHandler,
-  WorkspaceHandler,
   VcsHandler,
   ConfigHandler,
 )

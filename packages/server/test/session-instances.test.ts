@@ -1,24 +1,26 @@
 import { expect } from "bun:test"
-import { App } from "@opencode-ai/core/app"
-import { Bus } from "@opencode-ai/core/bus"
-import { Database } from "@opencode-ai/core/database/database"
-import { llmClient } from "@opencode-ai/core/effect/app-node-platform"
-import { Watcher } from "@opencode-ai/core/filesystem/watcher"
-import { Form } from "@opencode-ai/core/form"
-import { Instance } from "@opencode-ai/core/instance"
-import { LocationServiceMap } from "@opencode-ai/core/location-service-map"
-import { ModelsDev } from "@opencode-ai/core/models-dev"
-import { Permission } from "@opencode-ai/core/permission"
-import { PluginRuntime } from "@opencode-ai/core/plugin/runtime"
-import { Session } from "@opencode-ai/core/session"
-import { SessionRunnerModel } from "@opencode-ai/core/session/runner/model"
-import { Plugin } from "@opencode-ai/plugin/effect"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Location } from "@opencode-ai/schema/location"
-import { AbsolutePath } from "@opencode-ai/schema/schema"
-import { LayerNode } from "@opencode-ai/util/effect/layer-node"
-import { Global } from "@opencode-ai/util/global"
-import { Context, Duration, Effect, Layer, LayerMap, Option, RcMap, Schema, Scope } from "effect"
+import { App } from "@opencode/core/app"
+import { Bus } from "@opencode/core/bus"
+import { Database } from "@opencode/core/database/database"
+import { llmClient } from "@opencode/core/effect/app-node-platform"
+import { Watcher } from "@opencode/core/filesystem/watcher"
+import { Form } from "@opencode/core/form"
+import { Instance } from "@opencode/core/instance"
+import { LocationServiceMap } from "@opencode/core/location-service-map"
+import { ModelsDev } from "@opencode/core/models-dev"
+import { Permission } from "@opencode/core/permission"
+import { Plugin } from "@opencode/core/plugin"
+import { Session } from "@opencode/core/session"
+import { SessionRunnerModel } from "@opencode/core/session/runner/model"
+import { define } from "@opencode/plugin/effect/plugin"
+import type { SessionHooks } from "@opencode/plugin/effect/session"
+import { Agent } from "@opencode/schema/agent"
+import { Location } from "@opencode/schema/location"
+import { AbsolutePath } from "@opencode/schema/schema"
+import { LayerNode } from "@opencode/util/effect/layer-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
+import { Global } from "@opencode/util/global"
+import { Context, Duration, Effect, Layer, LayerMap, RcMap, Schema } from "effect"
 import { HttpEffect, HttpRouter, HttpServer } from "effect/unstable/http"
 import { LanguageModel, LLMClient } from "../../ai/src"
 import { OpenAIChat } from "../../ai/src/protocols/openai-chat"
@@ -49,7 +51,6 @@ it.live(
           limit: { context: 200_000, output: 8_192 },
         },
       )
-      const cell = PluginRuntime.makeCell()
       // Host and private instances must reuse the same global layer identities.
       const replacements: LayerNode.Replacements = [
         Global.node.replace(tempGlobalLayer),
@@ -58,100 +59,102 @@ it.live(
         App.node.replace(App.node),
         ModelsDev.node.replace(ModelsDev.configured({ fetch: false })),
         Watcher.node.replace(Watcher.configured({ enabled: false })),
-        PluginRuntime.node.replace(PluginRuntime.layerWithCell(cell)),
-        PluginRuntime.providerNode.replace(PluginRuntime.providerNodeWithCell(cell)),
         llmClient.replace(Layer.succeed(LLMClient.Service, llm)),
         SessionRunnerModel.node.replace(
           Layer.succeed(SessionRunnerModel.Service, { resolve: () => Effect.succeed(model) }),
         ),
-        Instance.byLocationNode.replace(
-          Layer.effect(
-            Instance.Service,
-            Effect.gen(function* () {
-              const instances = yield* LayerMap.make(
-                (id: Session.ID) => {
-                  const config = configs.find((config) => config.id === id)
-                  if (!config) throw new Error(`No instance configuration for ${id}`)
-                  return Instance.layer(location, {
-                    discovery: false,
-                    replacements,
-                    plugins: [
-                      Plugin.define({
-                        id: "session-instance",
-                        effect: Effect.fnUntraced(function* (ctx) {
-                          boots.push(config.id)
-                          yield* ctx.agent.transform((draft) =>
-                            draft.update("build", (agent) => {
-                              agent.permissions = [{ action: "*", resource: "*", effect: "allow" }]
-                            }),
-                          )
-                          yield* ctx.session.hook("prompt", (event) =>
-                            Effect.sync(() => {
-                              event.prompt.text += ` [${config.tool}]`
-                            }),
-                          )
-                          yield* ctx.session.hook("context", (event) =>
-                            Effect.sync(() => {
-                              event.generation.temperature = config.temperature
-                            }),
-                          )
-                          yield* ctx.permission.hook("evaluate", (event) =>
-                            Effect.sync(() => {
-                              event.effect = event.action === "instance-test" ? "ask" : "allow"
-                              if (event.action === "instance-test") event.message = config.tool
-                            }),
-                          )
-                          yield* ctx.tool.transform((draft) =>
-                            draft.add({
-                              name: config.tool,
-                              description: `Tool for ${config.id}`,
-                              input: Schema.Struct({}),
-                              output: Schema.String,
-                              options: { codemode: false },
-                              execute: () =>
-                                Effect.sync(() => {
-                                  executed.push(config.id)
-                                  return { output: config.id, content: config.id }
-                                }),
-                            }),
-                          )
-                          yield* ctx.command.transform((draft) =>
-                            draft.add({
-                              name: "instance-check",
-                              execute: (input) =>
-                                ctx.session
-                                  .prompt({
-                                    sessionID: input.sessionID,
-                                    text: `command ${config.tool}`,
-                                    delivery: input.delivery,
-                                    resume: false,
-                                  })
-                                  .pipe(
-                                    Effect.tap(() => Effect.sync(() => commands.push(config.id))),
-                                    Effect.asVoid,
-                                  ),
-                            }),
-                          )
+        Instance.node.replace(
+          makeGlobalNode({
+            service: Instance.Service,
+            deps: [LocationServiceMap.node],
+            layer: Layer.effect(
+              Instance.Service,
+              Effect.gen(function* () {
+                const locations = yield* LocationServiceMap.Service
+                const instances = yield* LayerMap.make(
+                  (id: Session.ID) => {
+                    const config = configs.find((config) => config.id === id)
+                    if (!config) throw new Error(`No instance configuration for ${id}`)
+                    return Instance.layer(location, {
+                      discovery: false,
+                      replacements: bindings,
+                      plugins: [
+                        define({
+                          id: "session-instance",
+                          effect: Effect.fnUntraced(function* (ctx) {
+                            boots.push(config.id)
+                            yield* ctx.agent.transform((editor) =>
+                              editor.update("build", (agent) => {
+                                agent.permissions = [{ action: "*", resource: "*", effect: "allow" }]
+                              }),
+                            )
+                            yield* ctx.session.hook("prompt", (event) =>
+                              Effect.sync(() => {
+                                event.prompt.text += ` [${config.tool}]`
+                              }),
+                            )
+                            const tune = (event: SessionHooks["context"]) =>
+                              Effect.sync(() => {
+                                event.options.temperature = config.temperature
+                              })
+                            yield* ctx.session.hook("context", tune)
+                            yield* ctx.session.hook("generate", tune)
+                            yield* ctx.permission.hook("evaluate", (event) =>
+                              Effect.sync(() => {
+                                event.effect = event.action === "instance-test" ? "ask" : "allow"
+                                if (event.action === "instance-test") event.message = config.tool
+                              }),
+                            )
+                            yield* ctx.tool.transform((editor) =>
+                              editor.add({
+                                name: config.tool,
+                                description: `Tool for ${config.id}`,
+                                input: Schema.Struct({}),
+                                output: Schema.String,
+                                options: { codemode: false },
+                                execute: () =>
+                                  Effect.sync(() => {
+                                    executed.push(config.id)
+                                    return { output: config.id, content: config.id }
+                                  }),
+                              }),
+                            )
+                            yield* ctx.command.transform((editor) =>
+                              editor.add({
+                                name: "instance-check",
+                                execute: (input) =>
+                                  ctx.session
+                                    .prompt({
+                                      sessionID: input.sessionID,
+                                      text: `command ${config.tool}`,
+                                      delivery: input.delivery,
+                                      resume: false,
+                                    })
+                                    .pipe(
+                                      Effect.tap(() => Effect.sync(() => commands.push(config.id))),
+                                      Effect.asVoid,
+                                    ),
+                              }),
+                            )
+                          }),
                         }),
-                      }),
-                    ],
-                  })
-                },
-                { idleTimeToLive: Duration.infinity },
-              )
-              return Instance.Service.of({
-                provide: (session) => Effect.provide(instances.get(session.id)),
-                provideIfLoaded: (session) => (effect) =>
-                  Effect.scopedWith((scope) =>
-                    Effect.gen(function* () {
-                      const context = yield* instances.contextEffectOption(session.id).pipe(Scope.provide(scope))
-                      if (Option.isNone(context)) return Option.none()
-                      return Option.some(yield* effect.pipe(Effect.provide(context.value)))
-                    }),
-                  ),
-              })
-            }),
-          ),
+                      ],
+                    })
+                  },
+                  { idleTimeToLive: Duration.infinity },
+                )
+                const selector = Instance.Service.of({
+                  provide: (session) => Effect.provide(instances.get(session.id)),
+                })
+                const bindings: LayerNode.Replacements = [
+                  ...replacements,
+                  Instance.node.replace(Layer.succeed(Instance.Service, selector)),
+                  LocationServiceMap.node.replace(Layer.succeed(LocationServiceMap.Service, locations)),
+                ]
+                return selector
+              }),
+            ),
+          }),
         ),
       ]
       const context = yield* Layer.build(
@@ -194,9 +197,12 @@ it.live(
           expect(yield* Effect.promise<unknown>(() => response.json())).toEqual({ data: [] })
         }
       }
-      expect(boots).toEqual([])
+      // Reading permissions or forms builds the Session's Instance and starts its plugin activation at once; the
+      // ordering assertion after the prompts is what proves each Session boots exactly once.
 
       for (const config of configs) {
+        const session = yield* sessions.get(config.id)
+        yield* Plugin.Service.use((plugins) => plugins.awaitActivation).pipe(instances.provide(session))
         const admitted = yield* sessions.prompt({ sessionID: config.id, text: "run", resume: false })
         expect(admitted.payload.text).toBe(`run [${config.tool}]`)
       }
@@ -289,7 +295,7 @@ it.live(
         ).toBe(404)
         expect(
           (yield* request(`/api/session/${entry.session.id}/permission/${entry.foreignPermission.id}/reply`, {
-            reply: "once",
+            decision: "once",
           })).status,
         ).toBe(404)
         yield* Effect.gen(function* () {
@@ -309,7 +315,7 @@ it.live(
         ).toBe(204)
         expect(
           (yield* request(`/api/session/${entry.session.id}/permission/${entry.permission.id}/reply`, {
-            reply: "once",
+            decision: "once",
           })).status,
         ).toBe(204)
         yield* Effect.gen(function* () {

@@ -1,11 +1,17 @@
 import { usePlatform } from "@/runtime/platform/platform"
 import { ServerConnection } from "@/runtime/server/registry"
 import { authTokenFromCredentials } from "./api"
-import { ClientError, OpenCode } from "@opencode-ai/client"
+import { ClientError, isUnauthorizedError, OpenCode } from "@opencode/client"
 import { Accessor, createEffect, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
-export type ServerHealth = { healthy: boolean; version?: string; incompatible?: boolean }
+export type ServerHealth = {
+  healthy: boolean
+  version?: string
+  incompatible?: boolean
+  checking?: boolean
+  unauthorized?: boolean
+}
 
 interface CheckServerHealthOptions {
   timeoutMs?: number
@@ -95,25 +101,12 @@ export async function checkServerHealth(
       fetch,
       headers,
     })
-      .health.get({ signal })
-      .then(async (x) => {
-        if (typeof x.healthy !== "boolean") return { error: new Error("Invalid health response") }
-        if (x.healthy && typeof x.version !== "string") {
-          const legacy = await fetch(new URL("/global/health", server.url), { headers, signal })
-            .then((response) => response.json())
-            .catch(() => undefined)
-          const version =
-            typeof legacy === "object" && legacy !== null && "version" in legacy && typeof legacy.version === "string"
-              ? legacy.version
-              : "1"
-          return { data: { healthy: false, version, incompatible: true } }
-        }
-        return { data: { healthy: x.healthy, version: x.version } }
-      })
+      .server.info({ signal })
+      .then((status) => ({ data: { healthy: true as const, version: status.version } }))
       .catch((error) => ({ error }))
-    if ("data" in current && current.data) return current.data
+    if ("data" in current) return current.data
     if (signal?.aborted) return { healthy: false }
-
+    if (isUnauthorizedError(current.error)) return { healthy: false, unauthorized: true }
     return next(count, current.error)
   }
   return attempt(0).finally(() => timeout?.clear?.())
@@ -142,25 +135,73 @@ export function useCheckServerHealth() {
 }
 
 export const useServerHealth = (servers: Accessor<ServerConnection.Any[]>, enabled: Accessor<boolean>) => {
-  const checkServerHealth = useCheckServerHealth()
+  return createServerHealth(servers, enabled, useCheckServerHealth())
+}
+
+export function createServerHealth(
+  servers: Accessor<ServerConnection.Any[]>,
+  enabled: Accessor<boolean>,
+  check: (http: ServerConnection.HttpBase) => Promise<ServerHealth>,
+) {
   const [status, setStatus] = createStore({} as Record<ServerConnection.Key, ServerHealth | undefined>)
+  const endpoints = new Map<ServerConnection.Key, string>()
 
   createEffect(() => {
     if (!enabled()) {
+      endpoints.clear()
       setStatus(reconcile({}))
       return
     }
-    const list = servers()
+    // Snapshot transport fields synchronously so a newly established SSH tunnel
+    // invalidates both the old result and any probe still using the old endpoint.
+    const list = servers().map((conn) => ({
+      key: ServerConnection.key(conn),
+      type: conn.type,
+      http: conn.http,
+      stage: conn.type === "ssh" ? conn.stage : undefined,
+    }))
+    for (const conn of list) {
+      if (conn.stage && conn.stage !== "ready") {
+        endpoints.delete(conn.key)
+        setStatus(
+          conn.key,
+          reconcile(
+            conn.stage === "failed"
+              ? { healthy: false }
+              : conn.stage === "incompatible"
+                ? { healthy: false, incompatible: true }
+                : undefined,
+          ),
+        )
+        continue
+      }
+      const endpoint = cacheKey(conn.http)
+      if (conn.type === "ssh" && endpoints.get(conn.key) !== endpoint) {
+        setStatus(conn.key, reconcile({ healthy: false, checking: true }))
+      }
+      endpoints.set(conn.key, endpoint)
+    }
+    for (const key of endpoints.keys()) {
+      if (!list.some((conn) => conn.key === key)) endpoints.delete(key)
+    }
     let dead = false
 
     const refresh = async () => {
-      const results: Record<string, ServerHealth> = {}
+      const results: Record<string, ServerHealth | undefined> = {}
       await Promise.all(
         list.map(async (conn) => {
-          const key = ServerConnection.key(conn)
-          const result = await checkServerHealth(conn.http)
-          results[key] = result
-          if (!dead) setStatus(key, result)
+          if (conn.stage && conn.stage !== "ready") {
+            results[conn.key] =
+              conn.stage === "failed"
+                ? { healthy: false }
+                : conn.stage === "incompatible"
+                  ? { healthy: false, incompatible: true }
+                  : undefined
+            return
+          }
+          const result = await check(conn.http)
+          results[conn.key] = result
+          if (!dead) setStatus(conn.key, reconcile(result))
         }),
       )
       if (dead) return

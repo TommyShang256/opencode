@@ -14,12 +14,14 @@ for (const tool of ["shell", "execute", "subagent"]) {
       await timeline.getByRole("button", { name: "Start tool", exact: true }).click()
       await expect(group).toHaveAttribute("data-timeline-part-ids", "tool_context_lifecycle,tool_shell_lifecycle")
       const original = await group.elementHandle()
+      const title = tool === "subagent" ? "Agent" : tool === "execute" ? "Execute" : "Shell"
       for (const action of [undefined, "Complete input", "Run command", "Complete command"]) {
         if (action) await timeline.getByRole("button", { name: action, exact: true }).click()
         await expect(group).toHaveAttribute("data-timeline-part-ids", "tool_context_lifecycle,tool_shell_lifecycle")
-        await expect(
-          group.locator('[data-component="context-tool-group-trigger"] [data-slot="basic-tool-tool-title"]'),
-        ).toHaveText(/^2 /)
+        await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
+          "aria-label",
+          `Used 2 Read, ${title}`,
+        )
         await expect(timeline.locator('[data-timeline-row="AssistantPart"]')).toHaveCount(1)
         await expect(trigger).toHaveAttribute("aria-expanded", String(open))
         expect(await original!.evaluate((node) => node.isConnected)).toBe(true)
@@ -59,7 +61,7 @@ story("transitions a streaming shell from writing through command execution", as
   const subtitle = tool.locator('[data-slot="basic-tool-tool-subtitle"]')
   await expect(shimmer).toHaveAttribute("aria-label", "Shell")
   await expect(shimmer).toHaveAttribute("data-active", "true")
-  await expect(subtitle).toHaveText("Writing command...")
+  await expect(subtitle).toHaveText("Writing command…")
   await expect(subtitle.locator('[data-component="text-shimmer"]')).toHaveCount(0)
   await expect(tool.locator('[data-component="shell-submessage"]')).toHaveCount(0)
   await expect(tool.locator('[data-slot="collapsible-trigger"]')).toHaveCSS("height", "28px")
@@ -77,11 +79,11 @@ story("transitions a streaming shell from writing through command execution", as
   await timeline.getByRole("button", { name: "Complete input" }).click()
   await expect(shimmer).toHaveAttribute("data-active", "true")
   await expect(subtitle).toHaveText("printf ready")
-  await expect(tool).not.toContainText("Writing command...")
+  await expect(tool).not.toContainText("Writing command…")
   await timeline.getByRole("button", { name: "Run command" }).click()
   await expect(shimmer).toHaveAttribute("data-active", "true")
   await expect(subtitle).toHaveText("printf ready")
-  await expect(tool).not.toContainText("Writing command...")
+  await expect(tool).not.toContainText("Writing command…")
   await timeline.getByRole("button", { name: "Complete command" }).click()
   const summary = timeline.getByRole("button", { name: "Used 1 Shell", exact: true })
   await expect(summary).toHaveAttribute("aria-expanded", "false")
@@ -96,7 +98,7 @@ story("shimmers and expands a running shell command", async ({ mount }) => {
   const tool = timeline.locator('[data-timeline-part-id="tool_shell_lifecycle"]')
   const trigger = tool.locator('[data-slot="collapsible-trigger"]')
   await expect(tool.locator('[data-component="text-shimmer"]')).toHaveAttribute("data-active", "true")
-  await expect(tool).not.toContainText("Writing command...")
+  await expect(tool).not.toContainText("Writing command…")
   await expect(tool.locator('[data-component="shell-submessage"]')).toHaveText("printf ready")
   await expect(tool.locator('[data-component="shell-submessage"] [data-component="text-shimmer"]')).toHaveCount(0)
   await expect(trigger).toHaveCSS("height", "28px")
@@ -139,9 +141,10 @@ for (const open of [false, true]) {
         "aria-expanded",
         String(open),
       )
-      await expect(
-        group.locator('[data-component="context-tool-group-trigger"] [data-slot="basic-tool-tool-title"]'),
-      ).toHaveText("1 Shell")
+      await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute(
+        "aria-label",
+        "Used 1 Shell",
+      )
       await expect(timeline.locator('[data-timeline-row="Thinking"]')).toHaveCount(0)
       await expect(used).toHaveAttribute("aria-expanded", "true")
       if (!open) await thought.click()
@@ -187,10 +190,9 @@ for (const locale of ["de", "ar"] as const) {
     await timeline.getByRole("button", { name: "Complete read" }).click()
     await timeline.getByRole("button", { name: "Complete glob" }).click()
     const group = timeline.locator('[data-timeline-part-ids="tool_context_read,tool_context_glob"]')
-    await expect(group.getByRole("button")).toHaveAccessibleName(/^Used 2 /)
-    await expect(
-      group.locator('[data-component="context-tool-group-trigger"] [data-slot="basic-tool-tool-title"]'),
-    ).toHaveText(/^2 /)
+    const label = locale === "de" ? "2 Lesen und Glob verwendet" : "استُخدمت 2 أداتان: \u2068قراءة وGlob\u2069"
+    await expect(group.getByRole("button")).toHaveAccessibleName(label)
+    await expect(group.locator('[data-component="context-tool-group-trigger"]')).toHaveAttribute("aria-label", label)
     await expect(page.locator("html")).toHaveAttribute("lang", locale)
   })
 }

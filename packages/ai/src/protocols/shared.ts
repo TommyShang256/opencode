@@ -1,29 +1,41 @@
-import { Buffer } from "node:buffer"
-import { Tool } from "@opencode-ai/schema/tool"
-import { Effect, Schema, Stream } from "effect"
-import * as Sse from "effect/unstable/encoding/Sse"
-import { Headers, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { Tool } from "@opencode/schema/tool"
+import { Effect, Option, Schema } from "effect"
+import { Headers, HttpClientRequest } from "effect/unstable/http"
+import { Media } from "../media.js"
 import {
   InvalidProviderOutputError,
   InvalidRequestError,
+  UnsupportedOperationError,
   AIError,
-  HttpContext,
+  LLMRequest,
+  Message,
+  ToolDefinition,
   type ContentPart,
-  type LLMRequest,
   type MediaPart,
+  type OpenString,
+  type ProviderID,
   type TextPart,
+  type ToolEntry,
   type ToolResultPart,
 } from "../schema/index.js"
+import { Json, decodeJson, encodeJson } from "../utils/json.js"
 import { isRecord } from "../utils/record.js"
-export { isRecord }
+export { Json, decodeJson, encodeJson, isRecord }
 
-export const Json = Schema.fromJsonString(Schema.Unknown)
-export const decodeJson = Schema.decodeUnknownSync(Json)
-export const encodeJson = Schema.encodeSync(Json)
 const isJson = Schema.is(Schema.Json)
 export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
 export const optionalArray = <const S extends Schema.Top>(schema: S) => Schema.optional(Schema.Array(schema))
 export const optionalNull = <const S extends Schema.Top>(schema: S) => Schema.optional(Schema.NullOr(schema))
+/** Optional field whose malformed value decodes to `undefined` instead of failing the enclosing struct. */
+export const lenient = <const S extends Schema.Top>(schema: S) =>
+  Schema.optionalKey(
+    Schema.UndefinedOr(schema).pipe(Schema.catchDecoding(() => Effect.succeed(Option.some(undefined)))),
+  )
+/** Provider-defined string enum: known values for autocomplete, any string accepted at runtime. */
+export const knownString = <Known extends string>() =>
+  Schema.declare<OpenString<Known>>((value): value is OpenString<Known> => typeof value === "string", {
+    expected: "string",
+  })
 
 export const OPENAI_PROMPT_CACHE_KEY_MAX_LENGTH = 64
 
@@ -44,6 +56,7 @@ export const promptCacheKey = (request: LLMRequest): string | undefined => {
 export interface ToolAccumulator {
   readonly id: string
   readonly name: string
+  readonly namespace?: string
   readonly input: string
 }
 
@@ -96,6 +109,14 @@ export const sumTokens = (...values: ReadonlyArray<number | undefined>): number 
   if (values.every((value) => value === undefined)) return undefined
   return values.reduce((acc: number, value) => acc + (value ?? 0), 0)
 }
+
+/**
+ * Caps an explicit thinking budget at half the output limit. Thinking counts against the output limit, so a budget
+ * near it leaves the answer, a tool call, or a summary without room. Smaller budgets, special values such as `-1` and
+ * `0`, and requests without an output limit pass through unchanged.
+ */
+export const fitThinkingBudget = (budget: number, maxTokens: number | undefined, minimum = 1) =>
+  maxTokens === undefined || budget <= maxTokens / 2 ? budget : Math.max(minimum, Math.floor(maxTokens / 2))
 
 export const eventError = (route: string, message: string, body?: string, cause?: unknown) =>
   new AIError({
@@ -163,26 +184,56 @@ export const wrappedSystemUpdate = Effect.fn("ProviderShared.wrappedSystemUpdate
 export const parseToolInput = (route: string, name: string, raw: string) =>
   parseJson(route, raw || "{}", `Invalid JSON input for ${route} tool call ${name}`)
 
-export interface NormalizedMedia {
-  readonly mime: string
-  readonly base64: string
-  readonly dataUrl: string
+/** Inline view or a typed `InvalidRequest` for routes that cannot fetch URLs or dereference provider refs. */
+export const requireInlineMedia = (route: string, asset: Media.Asset): Effect.Effect<Media.Inline, AIError> => {
+  const inline = asset.inline()
+  return inline ? Effect.succeed(inline) : Effect.fail(inlineRequired(route, asset))
 }
 
-export const normalizeMedia = (part: MediaPart): NormalizedMedia => {
-  const mime = part.mediaType.toLowerCase()
-  if (typeof part.data !== "string") {
-    const base64 = Buffer.from(part.data).toString("base64")
-    return { mime, base64, dataUrl: `data:${mime};base64,${base64}` }
-  }
-  if (!part.data.startsWith("data:")) return { mime, base64: part.data, dataUrl: `data:${mime};base64,${part.data}` }
-  return { mime, base64: part.data.slice(part.data.indexOf(",") + 1), dataUrl: part.data }
+export const inlineRequired = (route: string, asset: Media.Asset) =>
+  invalidRequest(
+    `${route} requires inline media (bytes or base64); ${asset.source.type} sources must be materialized first`,
+  )
+
+/** The remote URL of a `url` asset, for protocols that accept `http(s)` references natively. */
+export const mediaUrl = (asset: Media.Asset) => (asset.source.type === "url" ? asset.source.url : undefined)
+
+export type MediaReference = { readonly type: "dataUrl" | "url" | "ref"; readonly value: string }
+
+/**
+ * The one string a provider can address an asset by: inline payloads as a data URL, `url` sources as their URL, and
+ * this provider's own `ref` as its id. Other providers' refs are never forwarded and fail typed; omit `provider` for
+ * APIs with no file handles at all.
+ */
+export const mediaReference = (
+  asset: Media.Asset,
+  provider: ProviderID | undefined,
+  label: string,
+): Effect.Effect<MediaReference, AIError> => {
+  const inline = asset.inline()
+  if (inline) return Effect.succeed({ type: "dataUrl", value: inline.dataUrl })
+  const url = mediaUrl(asset)
+  if (url) return Effect.succeed({ type: "url", value: url })
+  if (provider !== undefined && asset.source.type === "ref" && asset.source.provider === provider)
+    return Effect.succeed({ type: "ref", value: asset.source.id })
+  const accepted = provider === undefined ? "" : `, and ${provider} references`
+  const got = asset.source.type === "ref" ? `; got ${asset.source.provider}:${asset.source.id}` : ""
+  return Effect.fail(invalidRequest(`${label} accepts inline bytes, data URLs, http(s) URLs${accepted}${got}`))
 }
 
-export const normalizeToolFile = (part: Tool.FileContent) =>
-  normalizeMedia({ type: "media", mediaType: part.mime, data: part.uri, filename: part.name })
-
-export const trimBaseUrl = (value: string) => value.replace(/\/+$/, "")
+/**
+ * Lift a tool-result file into a `MediaPart`. Tool files carry either a data URL, an `http(s)` URL, or raw base64 in
+ * `uri`; the declared `mime` wins over any data-URL prefix so tool authors control the type the model sees.
+ */
+export const toolFileMedia = (item: Tool.FileContent): MediaPart => {
+  const parsed = Media.parseDataUrl(item.uri)
+  const asset = parsed
+    ? Media.from({ ...parsed.source, mediaType: item.mime })
+    : /^https?:\/\//.test(item.uri)
+      ? Media.url(item.uri, { mediaType: item.mime })
+      : Media.base64(item.uri, item.mime)
+  return Message.media(asset, { filename: item.name })
+}
 
 export const toolResultText = (part: ToolResultPart) => {
   if (part.result.type === "text") return String(part.result.value)
@@ -206,47 +257,6 @@ export const errorText = (error: unknown) => {
 }
 
 /**
- * `framing` step for Server-Sent Events. Decodes UTF-8, runs the SSE channel
- * decoder, optionally filters named events, and drops empty events. `[DONE]`
- * is dropped by default or retained for protocols that use it as their stream
- * boundary. Retry control events are ignored without interrupting the stream.
- * Decoder failures become provider output errors so the public error channel
- * stays `AIError`.
- */
-export const sseFraming = (
-  bytes: Stream.Stream<Uint8Array, AIError>,
-  events?: ReadonlySet<string>,
-  includeDone = false,
-): Stream.Stream<string, AIError> =>
-  bytes.pipe(
-    Stream.decodeText(),
-    Stream.mapAccumEffect(
-      () => {
-        const output: Sse.Event[] = []
-        return {
-          output,
-          parser: Sse.makeParser((event) => {
-            if (event._tag === "Event") output.push(event)
-          }),
-        }
-      },
-      (state, chunk) =>
-        Effect.gen(function* () {
-          const error = state.parser.feed(chunk)
-          if (error) return yield* eventError("sse", error.message, chunk, error)
-          return [state, state.output.splice(0)] as const
-        }),
-    ),
-    Stream.filter(
-      (event) =>
-        (events === undefined || events.has(event.event)) &&
-        event.data.length > 0 &&
-        (event.data !== "[DONE]" || includeDone || (events !== undefined && event.event !== "message")),
-    ),
-    Stream.map((event) => event.data),
-  )
-
-/**
  * Canonical invalid-request constructor shared by protocol lowering.
  */
 export const invalidRequest = (message: string, cause?: unknown) =>
@@ -254,33 +264,60 @@ export const invalidRequest = (message: string, cause?: unknown) =>
     reason: new InvalidRequestError({ message, cause }),
   })
 
-export const imageResponse = Effect.fn("ProviderShared.imageResponse")(function* (
-  route: string,
-  name: string,
-  response: HttpClientResponse.HttpClientResponse,
-) {
-  const http = new HttpContext({ url: response.request.url, status: response.status, headers: response.headers })
-  const body = yield* response.text.pipe(
-    Effect.mapError(
-      (cause) =>
-        new AIError({
-          reason: new InvalidProviderOutputError({
-            route,
-            message: `Failed to read the ${name} response`,
-            http,
-            cause,
-          }),
-        }),
-    ),
-  )
+/**
+ * Canonical constructor for operations the selected route does not implement.
+ * Prefer this over `invalidRequest` when the failure is a missing route
+ * capability rather than a malformed caller input, so consumers can branch on
+ * `reason._tag` plus `reason.operation` instead of matching message text.
+ */
+export const unsupportedOperation = (input: {
+  readonly operation: string
+  readonly message: string
+  readonly provider?: ProviderID
+  readonly route?: string
+  readonly cause?: unknown
+}) =>
+  new AIError({
+    reason: new UnsupportedOperationError({
+      operation: input.operation,
+      message: input.message,
+      provider: input.provider,
+      route: input.route,
+      cause: input.cause,
+    }),
+  })
+
+/**
+ * Lower namespaces to flat definitions for protocols without a native
+ * namespace construct. Leaf names join their namespace path with `_` because
+ * `.` is not broadly accepted in provider tool names.
+ */
+export const flattenTools = (tools: ReadonlyArray<ToolEntry>, path: ReadonlyArray<string> = []) => {
+  const flat = tools.flatMap((tool): ReadonlyArray<ToolDefinition> => {
+    if (tool.type === "namespace") return flattenTools(tool.tools, [...path, tool.name])
+    if (path.length === 0) return [tool]
+    return [new ToolDefinition({ ...tool, name: [...path, tool.name].join("_") })]
+  })
+  return [...new Map(flat.map((tool) => [tool.name, tool])).values()]
+}
+
+export const flattenToolRequest = (request: LLMRequest) => {
+  const messages = request.messages.map((message) => {
+    const content = message.content.map((part) => {
+      if ((part.type !== "tool-call" && part.type !== "tool-result") || part.namespace === undefined) return part
+      return { ...part, name: `${part.namespace}_${part.name}`, namespace: undefined }
+    })
+    return content.every((part, index) => part === message.content[index])
+      ? message
+      : new Message({ ...message, content })
+  })
   return {
-    body,
-    invalid: (message: string, cause?: unknown) =>
-      new AIError({
-        reason: new InvalidProviderOutputError({ route, message, body, http, cause }),
-      }),
+    tools: flattenTools(request.tools),
+    request: messages.every((message, index) => message === request.messages[index])
+      ? request
+      : LLMRequest.update(request, { messages }),
   }
-})
+}
 
 export const matchToolChoice = <Auto, None, Required, Tool>(
   route: string,

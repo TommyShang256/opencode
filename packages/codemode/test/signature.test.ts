@@ -36,7 +36,7 @@ const lookupOrder = Tool.make({
 })
 
 describe("pretty signature rendering", () => {
-  test("described fields get JSDoc comments; undescribed and untagged fields get none", () => {
+  test("described fields get compact JSDoc; undescribed and unconstrained fields get none", () => {
     expect(inputTypeScript(listIssues, true)).toBe(
       [
         "{",
@@ -44,16 +44,9 @@ describe("pretty signature rendering", () => {
         "  owner: string,",
         "  /** Cursor from the previous response's pageInfo */",
         "  after?: string,",
-        "  /**",
-        "   * Results per page",
-        "   * @default 30",
-        "   */",
+        "  /** Results per page. @default 30 */",
         "  perPage?: number,",
-        "  /**",
-        "   * Filter by labels",
-        "   * @minItems 1",
-        "   * @maxItems 10",
-        "   */",
+        "  /** Filter by labels. @minItems 1 @maxItems 10 */",
         "  labels?: Array<string>,",
         '  state?: "open" | "closed",',
         "}",
@@ -105,7 +98,7 @@ describe("pretty signature rendering", () => {
     )
   })
 
-  test("constraints TypeScript cannot express surface as JSDoc tags", () => {
+  test("constraints and annotations share compact tagged JSDoc", () => {
     const pretty = jsonSchemaToTypeScript(
       {
         type: "object",
@@ -119,24 +112,184 @@ describe("pretty signature rendering", () => {
     )
     expect(pretty).toContain("  /** @deprecated */\n  legacy?: string")
     expect(pretty).toContain("  /** @format uri */\n  homepage?: string")
-    expect(pretty).toContain(
-      [
-        "  /**",
-        '   * @default ["a","b"]',
-        "   * @minItems 2",
-        "   * @maxItems 5",
-        "   */",
-        "  tags?: Array<string>",
-      ].join("\n"),
-    )
+    expect(pretty).toContain('  /** @default ["a","b"] @minItems 2 @maxItems 5 */\n  tags?: Array<string>')
   })
 
-  test("skips an unserializable default rather than emitting a broken tag", () => {
+  test("skips an unserializable default rather than emitting a broken summary", () => {
     const pretty = jsonSchemaToTypeScript(
       { type: "object", properties: { size: { type: "number", default: 1n } } },
       true,
     )
     expect(pretty).toBe(["{", "  size?: number,", "}"].join("\n"))
+  })
+
+  test("labels immediate item and dictionary value metadata above the field", () => {
+    const schema = {
+      properties: {
+        recipients: {
+          type: "array",
+          description: "People to notify",
+          minItems: 1,
+          items: { type: "string", description: "Email address", format: "email" },
+        },
+        scores: { type: "object", additionalProperties: { type: "number", minimum: 0 } },
+        names: { type: "array", items: { type: "string", description: "Display name" } },
+        plain: { type: "object", additionalProperties: { type: "string" } },
+      },
+    }
+    expect(jsonSchemaToTypeScript(schema, true)).toBe(
+      [
+        "{",
+        "  /**",
+        "   * People to notify. @minItems 1",
+        "   * Each item: Email address. @format email",
+        "   */",
+        "  recipients?: Array<string>,",
+        "  /** Each value: @minimum 0 */",
+        "  scores?: {",
+        "    [key: string]: number,",
+        "  },",
+        "  /** Each item: Display name */",
+        "  names?: Array<string>,",
+        "  plain?: {",
+        "    [key: string]: string,",
+        "  },",
+        "}",
+      ].join("\n"),
+    )
+    expect(jsonSchemaToTypeScript(schema)).toBe(
+      "{ recipients?: Array<string>; scores?: { [key: string]: number }; names?: Array<string>; plain?: { [key: string]: string } }",
+    )
+  })
+
+  test("does not apply additional property metadata to named properties", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        {
+          properties: {
+            scores: {
+              type: "object",
+              properties: { title: { type: "string", description: "Score title" } },
+              additionalProperties: { type: "number", minimum: 0 },
+            },
+          },
+        },
+        true,
+      ),
+    ).toBe(
+      [
+        "{",
+        "  /** Each additional value: @minimum 0 */",
+        "  scores?: {",
+        "    /** Score title */",
+        "    title?: string,",
+        "    [key: string]: number,",
+        "  },",
+        "}",
+      ].join("\n"),
+    )
+  })
+
+  test("labels array and dictionary contents in type-array unions", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        {
+          properties: {
+            recipients: { type: ["array", "null"], items: { type: "string", format: "email" } },
+            scores: { type: ["object", "null"], additionalProperties: { type: "number", minimum: 0 } },
+            either: {
+              type: ["array", "object"],
+              items: { type: "string", minLength: 1 },
+              additionalProperties: { type: "number", minimum: 0 },
+            },
+          },
+        },
+        true,
+      ),
+    ).toBe(
+      [
+        "{",
+        "  /** Each item: @format email */",
+        "  recipients?: Array<string> | null,",
+        "  /** Each value: @minimum 0 */",
+        "  scores?: {",
+        "      [key: string]: number,",
+        "    } | null,",
+        "  /**",
+        "   * Each item: @minLength 1",
+        "   * Each value: @minimum 0",
+        "   */",
+        "  either?: Array<string> | {",
+        "      [key: string]: number,",
+        "    },",
+        "}",
+      ].join("\n"),
+    )
+  })
+
+  test("keeps multiline item metadata indented under its label and escapes terminators", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        {
+          properties: {
+            values: {
+              type: "array",
+              minItems: 1,
+              items: { type: "string", description: "\nFirst */ line\n\nSecond line\n", pattern: "^\\d+\n*/$" },
+            },
+          },
+        },
+        true,
+      ),
+    ).toBe(
+      [
+        "{",
+        "  /**",
+        "   * @minItems 1",
+        "   * Each item: First * / line",
+        "   *",
+        "   *   Second line",
+        "   *   @pattern ^\\d+",
+        "   *   * /$",
+        "   */",
+        "  values?: Array<string>,",
+        "}",
+      ].join("\n"),
+    )
+  })
+
+  test("does not flatten nested containers, reference targets, or branches into item metadata", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        {
+          $defs: { Email: { type: "string", format: "email" } },
+          properties: {
+            matrix: { type: "array", items: { type: "array", minItems: 2, items: { type: "integer", minimum: 0 } } },
+            refs: { type: "array", items: { $ref: "#/$defs/Email", description: "Recipient" } },
+            choices: {
+              type: "array",
+              items: {
+                anyOf: [
+                  { type: "string", minLength: 1 },
+                  { type: "number", minimum: 0 },
+                ],
+              },
+            },
+          },
+        },
+        true,
+      ),
+    ).toBe(
+      [
+        "{",
+        "  /** Each item: @minItems 2 */",
+        "  matrix?: Array<Array<number>>,",
+        "  /** Each item: Recipient */",
+        "  refs?: Array<string>,",
+        "  choices?: Array<string | number>,",
+        "}",
+      ].join("\n"),
+    )
   })
 
   test.each([
@@ -151,9 +304,18 @@ describe("pretty signature rendering", () => {
     [{ type: "array", minItems: 0 }, "@minItems 0", "Array<unknown>"],
     [{ type: "array", maxItems: 0 }, "@maxItems 0", "Array<unknown>"],
     [{ type: "array", uniqueItems: true }, "@uniqueItems true", "Array<unknown>"],
-  ] as const)("renders constraint %j without changing the compact type", (value, tag, type) => {
+    [{ type: "string", minLength: 0, maxLength: 0 }, "@minLength 0 @maxLength 0", "string"],
+    [{ type: "array", minItems: 0, maxItems: 0 }, "@minItems 0 @maxItems 0", "Array<unknown>"],
+    [
+      { type: "array", minItems: 1, maxItems: 10, uniqueItems: true },
+      "@minItems 1 @maxItems 10 @uniqueItems true",
+      "Array<unknown>",
+    ],
+  ] as const)("renders constraint %j without changing the compact type", (value, summary, type) => {
     const schema = { type: "object", properties: { value } }
-    expect(jsonSchemaToTypeScript(schema, true)).toBe(["{", `  /** ${tag} */`, `  value?: ${type},`, "}"].join("\n"))
+    expect(jsonSchemaToTypeScript(schema, true)).toBe(
+      ["{", `  /** ${summary} */`, `  value?: ${type},`, "}"].join("\n"),
+    )
     expect(jsonSchemaToTypeScript(schema)).toBe(`{ value?: ${type} }`)
   })
 
@@ -188,30 +350,19 @@ describe("pretty signature rendering", () => {
     )
   })
 
-  test.each([false, null, ""])("preserves default %j alongside constraint tags", (value) => {
+  test.each([false, null, ""])("preserves default %j alongside constraints", (value) => {
     expect(jsonSchemaToTypeScript({ properties: { value: { default: value, minLength: 0 } } }, true)).toContain(
-      `   * @default ${JSON.stringify(value)}\n   * @minLength 0\n`,
+      `  /** @default ${JSON.stringify(value)} @minLength 0 */\n`,
     )
   })
 
-  test("escapes comment terminators in tag values", () => {
+  test("escapes comment terminators in summary values", () => {
     expect(
       jsonSchemaToTypeScript(
         { properties: { value: { type: "string", default: "*/", format: "*/", pattern: "^a*/b$" } } },
         true,
       ),
-    ).toBe(
-      [
-        "{",
-        "  /**",
-        '   * @default "* /"',
-        "   * @format * /",
-        "   * @pattern ^a* /b$",
-        "   */",
-        "  value?: string,",
-        "}",
-      ].join("\n"),
-    )
+    ).toBe(["{", '  /** @default "* /" @format * / @pattern ^a* /b$ */', "  value?: string,", "}"].join("\n"))
   })
 
   test("neutralizes */ inside descriptions so nothing closes the comment early", () => {
@@ -233,6 +384,88 @@ describe("pretty signature rendering", () => {
     )
     expect(pretty).toBe(
       ["{", "  /**", "   * First line", "   *", "   * Second line", "   */", "  query?: string,", "}"].join("\n"),
+    )
+  })
+
+  test("preserves inclusive and exclusive numeric bounds together", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        {
+          properties: {
+            value: {
+              type: "integer",
+              minimum: -10,
+              maximum: 10,
+              exclusiveMinimum: -5,
+              exclusiveMaximum: 5,
+              multipleOf: 2,
+            },
+          },
+        },
+        true,
+      ),
+    ).toContain(
+      "  /** @integer @minimum -10 @maximum 10 @exclusiveMinimum -5 @exclusiveMaximum 5 @multipleOf 2 */\n  value?: number,",
+    )
+  })
+
+  test.each([
+    ["Maximum attempts", "Maximum attempts."],
+    ["Maximum attempts.", "Maximum attempts."],
+    ["Maximum attempts!", "Maximum attempts!."],
+  ])("combines a short description (%s) with its summary", (description, expected) => {
+    expect(
+      jsonSchemaToTypeScript(
+        { properties: { attempts: { description, type: "integer", minimum: 1, default: 3 } } },
+        true,
+      ),
+    ).toContain(`  /** ${expected} @default 3 @integer @minimum 1 */\n`)
+  })
+
+  test("keeps multiline descriptions intact and appends a compact summary", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        {
+          properties: {
+            attempts: {
+              description: "\nMaximum attempts\n\nIncludes the initial request.\n",
+              type: "integer",
+              minimum: 1,
+            },
+          },
+        },
+        true,
+      ),
+    ).toBe(
+      [
+        "{",
+        "  /**",
+        "   * Maximum attempts",
+        "   *",
+        "   * Includes the initial request.",
+        "   * @integer @minimum 1",
+        "   */",
+        "  attempts?: number,",
+        "}",
+      ].join("\n"),
+    )
+  })
+
+  test("uses a block for long descriptions without truncating or rewriting them", () => {
+    const description = "A detailed description. ".repeat(8).trim()
+    expect(jsonSchemaToTypeScript({ properties: { name: { type: "string", description, minLength: 1 } } }, true)).toBe(
+      ["{", "  /**", `   * ${description}`, "   * @minLength 1", "   */", "  name?: string,", "}"].join("\n"),
+    )
+  })
+
+  test("preserves pattern backslashes and prefixes every line of multiline summary values", () => {
+    expect(
+      jsonSchemaToTypeScript(
+        { properties: { value: { type: "string", pattern: "^\\d+\n*/$", default: "a\nb" } } },
+        true,
+      ),
+    ).toBe(
+      ["{", "  /**", '   * @default "a\\nb" @pattern ^\\d+', "   * * /$", "   */", "  value?: string,", "}"].join("\n"),
     )
   })
 
@@ -460,9 +693,10 @@ describe("JSDoc signatures in catalogs and search results", () => {
         properties: {
           count: { type: "integer", minimum: 0, maximum: 10 },
           name: { type: "string", minLength: 1, maxLength: 20, pattern: "^[a-z]+$" },
-          labels: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 5 },
+          labels: { type: "array", items: { type: "string", minLength: 1 }, minItems: 1, maxItems: 5 },
+          scores: { type: "object", additionalProperties: { type: "integer", minimum: 0 } },
         },
-        required: ["count", "name", "labels"],
+        required: ["count", "name", "labels", "scores"],
       },
     },
     {
@@ -470,7 +704,11 @@ describe("JSDoc signatures in catalogs and search results", () => {
       schema: Schema.Struct({
         count: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(10)),
         name: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(20), Schema.isPattern(/^[a-z]+$/)),
-        labels: Schema.Array(Schema.String).check(Schema.isMinLength(1), Schema.isMaxLength(5)),
+        labels: Schema.Array(Schema.String.check(Schema.isMinLength(1))).check(
+          Schema.isMinLength(1),
+          Schema.isMaxLength(5),
+        ),
+        scores: Schema.Record(Schema.String, Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
       }),
     },
   ])("$source constraints survive input/output catalog and search signatures", async ({ schema }) => {
@@ -480,33 +718,29 @@ describe("JSDoc signatures in catalogs and search results", () => {
           description: "Constrained tool",
           input: schema,
           output: schema,
-          execute: () => Effect.succeed({ count: 1, name: "test", labels: ["test"] }),
+          execute: () => Effect.succeed({ count: 1, name: "test", labels: ["test"], scores: { test: 1 } }),
         }),
       },
     })
     const type = [
       "{",
-      "  /**",
-      "   * @integer",
-      "   * @minimum 0",
-      "   * @maximum 10",
-      "   */",
+      "  /** @integer @minimum 0 @maximum 10 */",
       "  count: number,",
-      "  /**",
-      "   * @minLength 1",
-      "   * @maxLength 20",
-      "   * @pattern ^[a-z]+$",
-      "   */",
+      "  /** @minLength 1 @maxLength 20 @pattern ^[a-z]+$ */",
       "  name: string,",
       "  /**",
-      "   * @minItems 1",
-      "   * @maxItems 5",
+      "   * @minItems 1 @maxItems 5",
+      "   * Each item: @minLength 1",
       "   */",
       "  labels: Array<string>,",
+      "  /** Each value: @integer @minimum 0 */",
+      "  scores: {",
+      "    [key: string]: number,",
+      "  },",
       "}",
     ].join("\n")
-    const signature = `tools.constrained(input: ${type}): Promise<${type}>`
-    expect(runtime.catalog()[0]?.signature).toBe(signature)
+    const signature = `tools.constrained(${type}): Promise<${type}>`
+    expect(runtime.catalog[0]?.signature).toBe(signature)
     const result = await Effect.runPromise(runtime.execute('return search({ query: "tools.constrained" })'))
     expect(result.ok).toBe(true)
     if (!result.ok) throw new Error("search failed")
@@ -522,26 +756,19 @@ describe("JSDoc signatures in catalogs and search results", () => {
     return result.value as { items: Array<{ path: string; signature: string }>; remaining: number }
   }
 
-  test("a raw JSON Schema (MCP-style) tool's result signature carries field JSDoc and tags", async () => {
+  test("a raw JSON Schema (MCP-style) tool's result signature carries field JSDoc and summaries", async () => {
     const { items } = await search("list issues repository")
     const item = items.find(({ path }) => path === "tools.github.list_issues")!
     expect(item.signature).toBe(
       [
-        "tools.github.list_issues(input: {",
+        "tools.github.list_issues({",
         "  /** Repository owner */",
         "  owner: string,",
         "  /** Cursor from the previous response's pageInfo */",
         "  after?: string,",
-        "  /**",
-        "   * Results per page",
-        "   * @default 30",
-        "   */",
+        "  /** Results per page. @default 30 */",
         "  perPage?: number,",
-        "  /**",
-        "   * Filter by labels",
-        "   * @minItems 1",
-        "   * @maxItems 10",
-        "   */",
+        "  /** Filter by labels. @minItems 1 @maxItems 10 */",
         "  labels?: Array<string>,",
         '  state?: "open" | "closed",',
         "}): Promise<unknown>",
@@ -555,7 +782,7 @@ describe("JSDoc signatures in catalogs and search results", () => {
       const item = items.find(({ path }) => path === "tools.orders.lookup")!
       expect(item.signature).toBe(
         [
-          "tools.orders.lookup(input: {",
+          "tools.orders.lookup({",
           "  /** Order identifier */",
           "  id: string,",
           "  verbose?: boolean,",
@@ -569,7 +796,7 @@ describe("JSDoc signatures in catalogs and search results", () => {
   })
 
   test("the catalog uses the same JSDoc signatures as search", async () => {
-    const catalog = runtime.catalog()
+    const catalog = runtime.catalog
     const github = (await search("list issues repository")).items.find(
       ({ path }) => path === "tools.github.list_issues",
     )!
@@ -597,8 +824,8 @@ describe("non-identifier tool paths", () => {
   const runtime = CodeMode.make({ tools: { context7: { "resolve-library-id": resolveLibrary } } })
 
   test("catalog signatures use bracket notation for dashed tool names", () => {
-    expect(runtime.catalog()[0]?.signature).toBe(
-      'tools.context7["resolve-library-id"](input: {\n  query: string,\n  libraryName: string,\n}): Promise<unknown>',
+    expect(runtime.catalog[0]?.signature).toBe(
+      'tools.context7["resolve-library-id"]({\n  query: string,\n  libraryName: string,\n}): Promise<unknown>',
     )
   })
 
@@ -609,6 +836,6 @@ describe("non-identifier tool paths", () => {
 
     const value = result.value as { items: Array<{ path: string; signature: string }> }
     expect(value.items[0]?.path).toBe('tools.context7["resolve-library-id"]')
-    expect(value.items[0]?.signature).toContain('tools.context7["resolve-library-id"](input: {')
+    expect(value.items[0]?.signature).toContain('tools.context7["resolve-library-id"]({')
   })
 })

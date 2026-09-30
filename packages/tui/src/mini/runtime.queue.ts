@@ -8,7 +8,7 @@
 // and tracks per-turn wall-clock duration for the footer status line.
 //
 // Resolves when the footer closes and all in-flight work finishes.
-import { SessionMessage } from "@opencode-ai/schema/session-message"
+import { SessionMessage } from "@opencode/schema/session-message"
 import { Locale } from "../util/locale"
 import { isCompactCommand, isExitCommand, isNewCommand } from "./prompt.shared"
 import type { FooterApi, FooterEvent, RunDelivery, RunPrompt } from "./types"
@@ -21,7 +21,7 @@ export type QueueInput = {
   footer: FooterApi
   initialInput?: string
   trace?: Trace
-  onSend?: (prompt: RunPrompt, delivery: RunDelivery) => void
+  onSend?: (prompt: RunPrompt, emittedUser: boolean) => void
   onAdmissionError?: (prompt: RunPrompt, error: unknown) => void | Promise<void>
   onNewSession?: () => void | Promise<void>
   onCompact?: () => void | Promise<void>
@@ -172,18 +172,7 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
               break
             }
 
-            if (sent.mode !== "shell" && sent.text.trim()) {
-              const commit = {
-                kind: "user",
-                text: sent.text,
-                phase: "start",
-                source: "system",
-                messageID: sent.messageID,
-              } as const
-              input.trace?.write("ui.commit", commit)
-              input.footer.append(commit)
-            }
-            input.onSend?.(sent, sent.delivery ?? "steer")
+            input.onSend?.(sent, false)
 
             if (state.closed) {
               break
@@ -278,7 +267,7 @@ export async function runPromptQueue(input: QueueInput): Promise<void> {
       const admission = state.admission
       admissionVersion += 1
       const delivery = prompt.delivery ?? "queue"
-      input.onSend?.(sent, delivery)
+      input.onSend?.(sent, false)
       admissions = admissions
         .then(() => admission)
         .then(() => input.admit(sent, delivery, admissionController.signal))

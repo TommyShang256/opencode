@@ -6,7 +6,7 @@ import { constants } from "node:fs"
 import { tmpdir } from "node:os"
 import path from "node:path"
 import { Effect } from "effect"
-import { ShellContext } from "@opencode-ai/core/shell/context"
+import { ShellContext } from "@opencode/core/shell/context"
 
 const limit = 4 * 1024 * 1024
 

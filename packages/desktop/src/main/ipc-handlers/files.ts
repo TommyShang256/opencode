@@ -23,8 +23,9 @@ export const fileHandlers = FileRpcs.toLayer(
           .pipe(Effect.map((buffer) => new Uint8Array(buffer)), Effect.orDie),
       FilesReleasePickedFiles: ({ token }, context) =>
         Effect.sync(() => files.releasePickedFiles(sender(handoff, context).id, token)),
-      FilesSaveFilePicker: ({ options }) => files.saveFilePicker(options),
-      FilesOpenExternal: ({ url }) => openExternalURL(url),
+      FilesSaveFile: ({ options, content }) => files.saveFile(options, content).pipe(Effect.orDie),
+      FilesOpenExternal: ({ url }) => openExternalURL(url).pipe(Effect.asVoid),
+      FilesOpenBrowser: ({ url }) => (/^https?:/i.test(url) ? openExternalURL(url) : Effect.succeed(false)),
       FilesOpenLocalFile: ({ url }) => openLocalFileURL(url),
       FilesOpenPath: ({ path, application }) =>
         files.openPath(path, application).pipe(
@@ -32,12 +33,8 @@ export const fileHandlers = FileRpcs.toLayer(
           Effect.orDie,
         ),
       FilesRevealPath: ({ path }) => files.revealPath(path),
-      FilesReadClipboardImage: () =>
-        Effect.sync(() => {
-          const image = files.readClipboardImage()
-          return image ? { ...image, buffer: new Uint8Array(image.buffer) } : null
-        }),
-      FilesWriteClipboardText: ({ text }) => Effect.sync(() => files.writeClipboardText(text)),
+      FilesReadClipboardImage: () => files.readClipboardImage(),
+      FilesWriteClipboardText: ({ text }) => files.writeClipboardText(text),
     })
   }),
 )

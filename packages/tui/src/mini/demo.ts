@@ -15,7 +15,7 @@
 // Demo mode handles permission and Form replies locally, completing or failing
 // the synthetic tool parts through the same callbacks used by the live footer.
 import path from "path"
-import type { JsonValue, SessionMessageAssistantTool } from "@opencode-ai/client/promise"
+import type { JsonValue, SessionMessageAssistantTool } from "@opencode/client/promise"
 import { parseSlashHead } from "../prompt/parse"
 import { writeSessionOutput } from "./stream"
 import { toolCommit, toolFinalPhase } from "./stream-v2.subagent"
@@ -947,6 +947,16 @@ export function createRunDemo(input: Input) {
 
     clearSubagent(state.footer)
 
+    if (line.mode !== "shell" && ["/help", "/permission", "/form", "/fmt"].includes(cmd)) {
+      state.footer.append({
+        kind: "user",
+        text: line.text,
+        phase: "start",
+        source: "system",
+        messageID: line.messageID,
+      })
+    }
+
     if (cmd === "/help") {
       intro(state)
       return true
@@ -996,14 +1006,14 @@ export function createRunDemo(input: Input) {
 
   const permission = (input: PermissionReply): boolean => {
     const item = state.perms.get(input.requestID)
-    if (!item || !input.reply) {
+    if (!item || !input.decision) {
       return false
     }
 
     state.perms.delete(input.requestID)
     clearBlocker(state)
 
-    if (input.reply === "reject") {
+    if (input.decision === "reject") {
       failTool(state, item.ref, input.message || "permission rejected")
       return true
     }

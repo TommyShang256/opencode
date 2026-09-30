@@ -1,8 +1,9 @@
 import { describe, expect, test } from "bun:test"
-import type { SessionInboxInfo, SessionMessageInfo } from "@opencode-ai/client/promise"
+import type { SessionInboxInfo, SessionMessageInfo } from "@opencode/client/promise"
 import { createRoot } from "solid-js"
 import { applyTimelineMessageHandoff, visibleTimelineMessages } from "./controller-projection"
 import { createTimelineProjection } from "./projection"
+import { timelinePresets } from "@opencode/session-ui/timeline/detail"
 
 const messages = [
   { id: "msg_1", type: "user", text: "first", time: { created: 1 } },
@@ -22,7 +23,7 @@ describe("visibleTimelineMessages", () => {
   const steer = {
     id: "msg_3",
     sessionID: "ses_1",
-    timeCreated: 3,
+    time: { created: 3 },
     type: "user",
     delivery: "steer",
     payload: { text: "queued" },
@@ -63,6 +64,7 @@ describe("visibleTimelineMessages", () => {
         reasoningMode: () => "compact",
         shellToolDefaultOpen: () => false,
         editToolDefaultOpen: () => false,
+        timelineDetail: () => timelinePresets[2].value,
         pendingUserMessageIDs: () => new Set([steer.id]),
       })
       expect(projection.activeMessageID()).toBe("msg_1")
@@ -133,7 +135,7 @@ describe("visibleTimelineMessages", () => {
       {
         id: "msg_3",
         sessionID: "ses_1",
-        timeCreated: 3,
+        time: { created: 3 },
         type: "user",
         delivery: "queue",
         payload: { text: "queued" },

@@ -115,8 +115,11 @@ const waitOpen = (ws: globalThis.WebSocket, input: WebSocketRequest) => {
     }
     const onAbort = () => {
       cleanup()
-      if (ws.readyState !== globalThis.WebSocket.CLOSED && ws.readyState !== globalThis.WebSocket.CLOSING)
-        ws.close(1000)
+      if (ws.readyState === globalThis.WebSocket.CLOSED || ws.readyState === globalThis.WebSocket.CLOSING) return
+      // Node's ws reports an aborted handshake as an error event on the next tick; with no listener left
+      // after cleanup, EventEmitter would throw it as an uncaught exception.
+      ws.addEventListener("error", () => {}, { once: true })
+      ws.close(1000)
     }
     const onOpen = () => {
       cleanup()
@@ -212,7 +215,9 @@ export const fromWebSocket = (
 ): Effect.Effect<WebSocketConnection, AIError> =>
   Effect.gen(function* () {
     yield* waitOpen(ws, input)
-    const messages = yield* Queue.bounded<string | Uint8Array, AIError | Cause.Done<void>>(128)
+    // The socket pushes frames synchronously and cannot be paused, so the hand-off to the consumer
+    // fiber must absorb whole read buffers. Bun delivers over a thousand small frames in one tick.
+    const messages = yield* Queue.unbounded<string | Uint8Array, AIError | Cause.Done<void>>()
 
     const oversized = (message: string | Uint8Array) =>
       typeof message === "string" ? new Blob([message]).size > MAX_FRAME_BYTES : message.byteLength > MAX_FRAME_BYTES
@@ -235,19 +240,7 @@ export const fromWebSocket = (
     }
     const offer = (message: string | Uint8Array) => {
       if (rejectOversized(message)) return
-      if (Queue.offerUnsafe(messages, message)) return
-      Queue.failCauseUnsafe(
-        messages,
-        Cause.fail(
-          transportError("WebSocket inbound queue overflow", {
-            body: typeof message === "string" ? message : new TextDecoder().decode(message),
-            url: input.url,
-            operation: "read",
-            code: "queue-overflow",
-            phase: "receive",
-          }),
-        ),
-      )
+      Queue.offerUnsafe(messages, message)
     }
 
     const onMessage = (event: MessageEvent) => {
