@@ -30,6 +30,7 @@ import { SessionRunnerRetry } from "./retry.js"
 import { SessionStep } from "./step.js"
 import { ToolOutput } from "../../tool-output.js"
 import { Plugin } from "../../plugin.js"
+import { PluginHooks } from "../../plugin/hooks.js"
 import { MAX_STEPS_PROMPT } from "./max-steps.js"
 
 const CONTINUE_AFTER_INCOMPLETE_STREAM =
@@ -282,7 +283,7 @@ const layer = Layer.effect(
         })
         const completed = yield* SessionStep.Outcome.$match(outcome, {
           Completed: (outcome) => Effect.succeed({ _tag: "Completed" as const, continuing: outcome.needsContinuation }),
-          Suspended: (outcome) => Effect.succeed({ _tag: "Suspended" as const, ...outcome }),
+          Suspended: (outcome) => Effect.succeed(SessionStep.Outcome.Suspended(outcome)),
           Retry: (outcome) =>
             retry.wait({
               decision: outcome.decision,
@@ -381,6 +382,7 @@ export const node = makeLocationNode({
     SessionStore.node,
     SessionCompaction.node,
     Plugin.node,
+    PluginHooks.node,
     SessionTitle.node,
     Snapshot.node,
     ToolOutput.node,

@@ -353,10 +353,10 @@ export const make = Effect.fn("Session.make")(function* () {
       (event): event is ClientToolResultConflictError => event instanceof ClientToolResultConflictError,
     )
     if (conflict) return yield* conflict
-    if (events.length === 0) return
-    const first = events[0]
+    const valid = events.filter((event) => !(event instanceof ClientToolResultConflictError))
+    const first = valid[0]
     if (!first) return
-    yield* bus.publishAll([first, ...events.slice(1)] as [typeof first, ...typeof events])
+    yield* bus.publishAll([first, ...valid.slice(1)])
     // A browser-owned tool result is an admission boundary, not a request to
     // synchronously wait for the whole resumed turn. The continuation may
     // immediately wait on a permission/form or run for minutes; keeping this

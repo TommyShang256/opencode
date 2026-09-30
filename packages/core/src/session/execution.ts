@@ -90,7 +90,7 @@ export const layer = Layer.effect(
       force: boolean,
       continuation?: SessionRunner.Continuation,
       promotable: SessionInbox.Promotable = "input",
-    ): Effect.fn.Return<void, SessionRunner.RunError> {
+    ): Effect.fn.Return<SessionRunner.DrainResult, SessionRunner.RunError> {
       const session = yield* store.get(sessionID)
       if (!session) return yield* Effect.die(new Error(`Session not found: ${sessionID}`))
       const result = yield* SessionRunner.Service.use((runner) =>
@@ -104,8 +104,8 @@ export const layer = Layer.effect(
         ),
       )
       return yield* SessionRunner.DrainResult.$match(result, {
-        Complete: () => Effect.succeed({ _tag: "Complete" as const }),
-        Suspended: (result) => Effect.succeed({ _tag: "Suspended" as const, ...result }),
+        Complete: () => Effect.succeed(SessionRunner.DrainResult.Complete()),
+        Suspended: (result) => Effect.succeed(SessionRunner.DrainResult.Suspended(result)),
         Moved: (result) => drain(sessionID, false, result.continuation, promotable),
         Reloaded: (result) => drain(sessionID, result.force, result.continuation, promotable),
       })

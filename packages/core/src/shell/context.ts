@@ -1,8 +1,8 @@
 export * as ShellContext from "./context.js"
 
-import type { ShellCreateBefore } from "@opencode-ai/plugin/effect/shell"
+import type { ShellCreateBefore } from "@opencode/plugin/effect/shell"
 import { Context, Effect, Layer, Scope } from "effect"
-import { makeGlobalNode } from "@opencode-ai/util/effect/app-node"
+import { makeGlobalNode } from "@opencode/util/effect/app-node"
 
 export type Identity = NonNullable<ShellCreateBefore["toolContext"]>
 

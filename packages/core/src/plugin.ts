@@ -62,7 +62,7 @@ const layer = Layer.effect(
         })
       })
       const source = !plugin.source || plugin.source.type === "builtin" ? "builtin" : "extension"
-      const loaded = yield* Effect.suspend(() =>
+      const exit = yield* Effect.suspend(() =>
         plugin.effect({
           ...host,
           storage: PluginHost.storage(kv, plugin.id),
@@ -94,7 +94,6 @@ const layer = Layer.effect(
               ),
           },
         }),
-      )
       ).pipe(
         grouped,
         inherit,

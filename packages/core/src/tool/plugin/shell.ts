@@ -131,7 +131,7 @@ export const Plugin = {
         }),
       )
       yield* access.authorizeExternal([target, ...directories], context)
-      const deletions = [...new Set(parsed.deletions)]
+      const deletions = [...new Set(parsed.deletions ?? [])]
       if (deletions.length > 0)
         yield* permission.assert({
           action: "delete",

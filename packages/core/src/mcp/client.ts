@@ -27,12 +27,12 @@ import {
 import { Cause, Effect, Exit, Schema } from "effect"
 import { ConfigMCP } from "@opencode/schema/config/mcp"
 import type { Session } from "@opencode/schema/session"
-import type { Tool } from "@opencode/schema/tool"
+import type { Tool as CoreTool } from "@opencode/schema/tool"
 import { McpStdio } from "./stdio.js"
 
 const DEFAULT_STARTUP_TIMEOUT = 30_000
 /** Runtime provenance only; receivers still authorize the active invocation. */
-export type Invocation = Pick<Tool.Context, "agent" | "messageID" | "id">
+export type Invocation = Pick<CoreTool.Context, "agent" | "messageID" | "id">
 /** Ephemeral bridge provenance; never include in arguments, model messages or logs. */
 export type ScriptContext = { readonly reference: string; readonly directory: string; readonly workspace?: string }
 const DEFAULT_CATALOG_TIMEOUT = 30_000
@@ -59,55 +59,6 @@ export class SessionExpiredError extends Schema.TaggedError<SessionExpiredError>
   override get message() {
     return `MCP server session expired: ${this.server}`
   }
-export interface ToolDefinition {
-  readonly name: string
-  readonly description: string | undefined
-  readonly inputSchema: unknown
-  readonly outputSchema: unknown
-  readonly meta: Record<string, unknown> | undefined
-}
-
-export interface PromptDefinition {
-  readonly name: string
-  readonly description: string | undefined
-  readonly arguments:
-    | ReadonlyArray<{
-        readonly name: string
-        readonly description: string | undefined
-        readonly required: boolean | undefined
-      }>
-    | undefined
-}
-
-export interface PromptMessage {
-  readonly role: string
-  readonly content: unknown
-}
-
-export interface PromptResult {
-  readonly messages: ReadonlyArray<PromptMessage>
-}
-
-export interface ResourceDefinition {
-  readonly name: string
-  readonly uri: string
-  readonly description: string | undefined
-  readonly mimeType: string | undefined
-}
-
-export interface ResourceTemplateDefinition {
-  readonly name: string
-  readonly uriTemplate: string
-  readonly description: string | undefined
-  readonly mimeType: string | undefined
-}
-
-export type ResourceContentPart =
-  | { readonly type: "text"; readonly uri: string; readonly text: string; readonly mimeType: string | undefined }
-  | { readonly type: "blob"; readonly uri: string; readonly blob: string; readonly mimeType: string | undefined }
-
-export interface ReadResourceResult {
-  readonly contents: ReadonlyArray<ResourceContentPart>
 }
 
 export type CallToolContent =
@@ -141,21 +92,60 @@ export interface ElicitationHandler {
   }) => Effect.Effect<void>
 }
 
+
+export interface ToolDefinition {
+  readonly name: string
+  readonly description: string | undefined
+  readonly inputSchema: unknown
+  readonly outputSchema: unknown
+  readonly meta: Record<string, unknown> | undefined
+}
+
+export interface PromptDefinition {
+  readonly name: string
+  readonly description: string | undefined
+  readonly arguments:
+    | ReadonlyArray<{
+        readonly name: string
+        readonly description: string | undefined
+        readonly required: boolean | undefined
+      }>
+    | undefined
+}
+
+export interface ResourceDefinition {
+  readonly name: string
+  readonly uri: string
+  readonly description: string | undefined
+  readonly mimeType: string | undefined
+}
+
+export interface ResourceTemplateDefinition {
+  readonly name: string
+  readonly uriTemplate: string
+  readonly description: string | undefined
+  readonly mimeType: string | undefined
+}
+
+export interface PromptResult {
+  readonly messages: ReadonlyArray<{ readonly role: string; readonly content: unknown }>
+}
+
 /** Handle over a connected MCP server that keeps the SDK `Client` out of the rest of core. */
 export interface Connection {
   /** True when the connection negotiated revision 2026-07-28 or later; false is the initialize handshake. */
   readonly modern: boolean
   readonly instructions: string | undefined
-  readonly tools: () => Effect.Effect<Tool[], Error>
-  readonly prompts: () => Effect.Effect<Prompt[], Error>
-  readonly resources: () => Effect.Effect<Resource[], Error>
-  readonly resourceTemplates: () => Effect.Effect<ResourceTemplateType[], Error>
+  readonly tools: () => Effect.Effect<ToolDefinition[], Error>
+  readonly prompts: () => Effect.Effect<PromptDefinition[], Error>
+  readonly resources: () => Effect.Effect<ResourceDefinition[], Error>
+  readonly resourceTemplates: () => Effect.Effect<ResourceTemplateDefinition[], Error>
   /** Resolves to undefined when the server does not advertise resources. */
   readonly readResource: (input: { readonly uri: string }) => Effect.Effect<ReadResourceResult | undefined, Error>
   readonly prompt: (input: {
     readonly name: string
     readonly args?: Record<string, string>
-  }) => Effect.Effect<GetPromptResult, Error>
+  }) => Effect.Effect<PromptResult, Error>
   readonly callTool: (input: {
     readonly name: string
     readonly args?: Record<string, unknown>
@@ -304,46 +294,52 @@ export const connect = Effect.fnUntraced(function* (
       modern: client.getProtocolEra() === "modern",
       instructions: client.getInstructions()?.trim() || undefined,
       tools: () =>
-        request("list MCP tools", () => client.listTools(undefined, catalog)).pipe(Effect.map((r) => r.tools)),
-        Effect.gen(function* () {
-          if (!client.getServerCapabilities()?.tools) return []
-          const tools = yield* Effect.tryPromise({
-            try: () =>
-              paginate(
-                async (cursor) => {
-                  const params = cursor === undefined ? undefined : { cursor }
-                  try {
-                    return await client.listTools(params, { timeout: catalogTimeout })
-                  } catch (error) {
-                    if (!(error instanceof Error) || !isOutputSchemaError(error)) throw error
-                    return client.request({ method: "tools/list", params }, TolerantListToolsResult, {
-                      timeout: catalogTimeout,
-                    })
-                  }
-                },
-                (result) => result.tools,
-              ),
-            catch: toError,
-          }).pipe(
-            Effect.tapError((error) => Effect.logWarning("failed to list MCP tools", { server, error: error.message })),
-          )
-          return tools.map((tool) => ({
-            name: tool.name,
-            description: tool.description,
-            inputSchema: tool.inputSchema,
-            outputSchema: "outputSchema" in tool ? tool.outputSchema : undefined,
-            meta: tool._meta,
-          }))
-        }),
+        request("list MCP tools", () => client.listTools(undefined, catalog)).pipe(
+          Effect.map((r) =>
+            r.tools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              inputSchema: tool.inputSchema,
+              outputSchema: "outputSchema" in tool ? tool.outputSchema : undefined,
+              meta: tool._meta,
+            })),
+          ),
+        ),
       prompts: () =>
-        request("list MCP prompts", () => client.listPrompts(undefined, catalog)).pipe(Effect.map((r) => r.prompts)),
+        request("list MCP prompts", () => client.listPrompts(undefined, catalog)).pipe(
+          Effect.map((r) =>
+            r.prompts.map((prompt) => ({
+              name: prompt.name,
+              description: prompt.description,
+              arguments: prompt.arguments?.map((argument) => ({
+                name: argument.name,
+                description: argument.description,
+                required: argument.required,
+              })),
+            })),
+          ),
+        ),
       resources: () =>
         request("list MCP resources", () => client.listResources(undefined, catalog)).pipe(
-          Effect.map((r) => r.resources),
+          Effect.map((r) =>
+            r.resources.map((resource) => ({
+              name: resource.name,
+              uri: resource.uri,
+              description: resource.description,
+              mimeType: resource.mimeType,
+            })),
+          ),
         ),
       resourceTemplates: () =>
         request("list MCP resource templates", () => client.listResourceTemplates(undefined, catalog)).pipe(
-          Effect.map((r) => r.resourceTemplates),
+          Effect.map((r) =>
+            r.resourceTemplates.map((template) => ({
+              name: template.name,
+              uriTemplate: template.uriTemplate,
+              description: template.description,
+              mimeType: template.mimeType,
+            })),
+          ),
         ),
       readResource: (input) => {
         if (!client.getServerCapabilities()?.resources) return Effect.succeed(undefined)
@@ -354,14 +350,22 @@ export const connect = Effect.fnUntraced(function* (
       prompt: (input) =>
         request("get MCP prompt", (signal) =>
           client.getPrompt({ name: input.name, arguments: input.args ?? {} }, { signal, timeout: execution }),
-        ),
+        ).pipe(Effect.map((result) => ({ messages: result.messages.map((message) => ({ role: message.role, content: message.content })) }))),
       callTool: (input) =>
         request("call MCP tool", (signal) =>
           client.callTool(
             {
               name: input.name,
               arguments: input.args ?? {},
-              ...(input.sessionID === undefined ? {} : { _meta: { "ai.opencode/sessionID": input.sessionID, ...(input.invocation === undefined ? {} : { "ai.opencode/invocation": input.invocation, ...(input.scriptContext === undefined ? {} : { "ai.opencode/script": input.scriptContext }) }) } }),
+              ...(!input.sessionID && !input.invocation && !input.scriptContext
+                ? {}
+                : {
+                    _meta: {
+                      ...(input.sessionID === undefined ? {} : { "ai.opencode/sessionID": input.sessionID }),
+                      ...(input.invocation === undefined ? {} : { "ai.opencode/invocation": input.invocation }),
+                      ...(input.scriptContext === undefined ? {} : { "ai.opencode/script": input.scriptContext }),
+                    },
+                  }),
             },
             // Requesting progress keeps long calls alive under the SDK's timeout; execution is the hard wall.
             { signal, timeout: execution, onprogress: () => {} },

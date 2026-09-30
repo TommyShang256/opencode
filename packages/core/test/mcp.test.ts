@@ -160,21 +160,27 @@ function resourceServer(
               structuredContent: result,
             }
           })
-          return {
-            content: [{ type: "text", text: JSON.stringify(result) }],
-            structuredContent: result,
-          }
-        })
-      }
-      if (!input.emptyElicitation && !input.urlElicitation) {
-        protocol.setRequestHandler(CallToolRequestSchema, (request) => {
-          state.toolCalls.push({
-            name: request.params.name,
-            arguments: request.params.arguments,
-            sessionID: request.params._meta?.sessionID,
-            execution: request.params._meta?.execution,
-            script: request.params._meta?.script,
-            progressToken: request.params._meta?.progressToken,
+        }
+        if (input.urlElicitation) {
+          const url = "https://example.com/authorize"
+          // Modern servers cannot call elicitInput; they return input_required and the client retries.
+          protocol.setRequestHandler("tools/call", async (request, ctx) => {
+            const responses = ctx.mcpReq.inputResponses
+            if (input.modern && !responses)
+              return inputRequired({ inputRequests: { auth: inputRequired.elicitUrl({ message: "Authorize", url }) } })
+            const response = inputResponse(responses, "auth")
+            const result = input.modern
+              ? { action: response.kind === "elicit" ? response.action : "cancel" }
+              : await protocol.elicitInput({
+                  mode: "url",
+                  message: "Authorize access",
+                  url,
+                  elicitationId: "elicitation-test",
+                })
+            return {
+              content: [{ type: "text", text: JSON.stringify(result) }],
+              structuredContent: result,
+            }
           })
         }
         if (!input.emptyElicitation && !input.urlElicitation) {
@@ -183,6 +189,8 @@ function resourceServer(
               name: request.params.name,
               arguments: request.params.arguments,
               sessionID: request.params._meta?.["ai.opencode/sessionID"],
+              execution: request.params._meta?.["ai.opencode/invocation"],
+              script: request.params._meta?.["ai.opencode/script"],
               progressToken: request.params._meta?.progressToken,
             })
             return Promise.resolve({ content: [] })

@@ -38,5 +38,6 @@ export interface MCPEditor {
 
 export interface MCPDomain extends Pick<McpApi<unknown>, "list"> {
   readonly hook: Hooks<MCPHooks, MCPFailures>
-  readonly transform: Transform<MCPEditor>  readonly reload: () => Effect.Effect<void>
+  readonly transform: Transform<MCPEditor>
+  readonly reload: () => Effect.Effect<void>
 }
