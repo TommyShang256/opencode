@@ -353,7 +353,10 @@ export const make = Effect.fn("Session.make")(function* () {
       (event): event is ClientToolResultConflictError => event instanceof ClientToolResultConflictError,
     )
     if (conflict) return yield* conflict
-    const valid = events.filter((event) => !(event instanceof ClientToolResultConflictError))
+    const valid = events.filter(
+      (event): event is Exclude<(typeof events)[number], ClientToolResultConflictError> =>
+        !(event instanceof ClientToolResultConflictError),
+    )
     const first = valid[0]
     if (!first) return
     yield* bus.publishAll([first, ...valid.slice(1)])

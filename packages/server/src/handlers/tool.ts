@@ -1,4 +1,4 @@
-import { Tool } from "@opencode-ai/core/tool"
+import { Tool } from "@opencode/core/tool"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
 import { response } from "../location"

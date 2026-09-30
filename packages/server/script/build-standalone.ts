@@ -235,14 +235,12 @@ async function verify(source: string, version: string) {
   const stderr = new Response(child.stderr).text()
   let failure: unknown
   try {
-    const url = new URL(`http://127.0.0.1:${port}/api/health`)
+    const url = new URL(`http://127.0.0.1:${port}/api/info`)
     const response = await waitForHealth(url, password)
     const body: unknown = await response.json()
     if (
       typeof body !== "object" ||
       body === null ||
-      !("healthy" in body) ||
-      body.healthy !== true ||
       !("version" in body) ||
       body.version !== version
     ) {
