@@ -23,6 +23,7 @@ import { Config } from "./config.js"
 import { ToolOutput } from "./tool-output.js"
 import { ShellResult } from "./shell/result.js"
 import { ShellContext } from "./shell/context.js"
+import { Skill } from "./skill.js"
 
 export class NotFoundError extends Schema.TaggedError<NotFoundError>()("Shell.NotFoundError", {
   id: Shell.ID,
@@ -132,6 +133,7 @@ const layer = () =>
       const environments = yield* SessionEnvironment.Service
       const shellContexts = yield* ShellContext.Service
       const config = yield* Config.Service
+      const skills = yield* Skill.Service
       const context = yield* Effect.context()
       const runFork = Effect.runForkWith(context)
       const commands = new Map<Shell.ID, Active>()
@@ -309,7 +311,8 @@ const layer = () =>
                   Scope.provide(contextScope),
                   Effect.mapError((cause) => new AppProcess.AppProcessError({ command: invocation.command, cause })),
                 )
-              const sandbox = sandboxCommand(invocation, args, location.directory, connection)
+              const skillDirectories = (yield* skills.list()).map((skill) => path.dirname(skill.path))
+              const sandbox = sandboxCommand(invocation, args, location.directory, connection, skillDirectories)
               const handle = yield* environment.spawner
                 .spawn(
                   ChildProcess.make(sandbox.executable, sandbox.args, {
@@ -471,6 +474,7 @@ export const node = makeLocationNode({
     SessionEnvironment.node,
     ShellContext.node,
     Config.node,
+    Skill.node,
     cleanupNode,
   ],
 })
@@ -503,7 +507,22 @@ function shellEnvironment(session: SessionEnvironment.Variables | undefined, dir
   }
 }
 
-function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory: string, connection?: ShellContext.Connection) {
+/**
+ * Loaded Skill directories stay readable at their own paths, so instructions can run bundled scripts in place.
+ * They are bound read-only: a Shell may execute or read a Skill, never change the installed copy.
+ */
+function skillBinds(directories: ReadonlyArray<string>, workspace: string) {
+  const roots = [...new Set(directories.filter((item) => path.isAbsolute(item)).map((item) => path.resolve(item)))]
+    .filter((item) => item !== path.sep && !item.startsWith(path.resolve(workspace) + path.sep) && item !== path.resolve(workspace))
+    .sort()
+  const parents = [...new Set(roots.flatMap((item) => item.split(path.sep).filter(Boolean).slice(0, -1)
+    .reduce<string[]>((all, segment) => [...all, path.join(all.at(-1) ?? path.sep, segment)], [])))]
+    .filter((item) => item !== "/tmp")
+  return [...parents.flatMap((item) => ["--dir", item]), ...roots.flatMap((item) => ["--ro-bind-try", item, item])]
+}
+
+function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory: string, connection?: ShellContext.Connection,
+  skillDirectories: ReadonlyArray<string> = []) {
   if (process.env.OPENCODE_WORKSPACE_ONLY !== "true") {
     return { executable: invocation.shell, args, cwd: invocation.cwd, bridgeSocket: connection?.socket,
       env: { ...invocation.env, ...(connection?.clients.length ? {
@@ -566,6 +585,7 @@ function sandboxCommand(invocation: ShellCreateBefore, args: string[], directory
       "--bind",
       directory,
       directory,
+      ...skillBinds(skillDirectories, directory),
       ...(connection ? [
         "--dir", "/run/opencode", "--dir", "/run/opencode/bin",
         "--ro-bind", connection.socket, "/run/opencode/bridge.sock",

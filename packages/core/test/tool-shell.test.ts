@@ -38,6 +38,7 @@ import { PluginHooks } from "@opencode/core/plugin/hooks"
 import { PluginSupervisor } from "@opencode/core/plugin/supervisor"
 import { Shell } from "@opencode/core/shell"
 import { ShellContext } from "@opencode/core/shell/context"
+import { Skill } from "@opencode/core/skill"
 import { ShellSelect } from "@opencode/core/shell/select"
 import { Shell as ShellSchema } from "@opencode/schema/shell"
 import { ShellTool } from "@opencode/core/tool/plugin/shell"
@@ -1245,6 +1246,52 @@ describe("ShellTool", () => {
       ), { timeout: 15_000 },
     )
 
+    it.live("workspace-only shell runs loaded Skill scripts in place but cannot change them", () =>
+      Effect.acquireUseRelease(
+        Effect.sync(() => {
+          const previous = process.env.OPENCODE_WORKSPACE_ONLY
+          process.env.OPENCODE_WORKSPACE_ONLY = "true"
+          return previous
+        }),
+        () => Effect.acquireUseRelease(Effect.promise(() => tmpdir("shell-skill-")), tmp => {
+          reset()
+          return Effect.gen(function* () {
+            const workspace = path.join(tmp.path, "workspace")
+            const skill = path.join(tmp.path, "install", "skills", "probe")
+            const unrelated = path.join(tmp.path, "install", "secret.txt")
+            yield* Effect.promise(async () => {
+              await fs.mkdir(workspace)
+              await fs.mkdir(path.join(skill, "scripts"), { recursive: true })
+              await fs.writeFile(path.join(skill, "SKILL.md"), "# probe")
+              await fs.writeFile(path.join(skill, "scripts", "probe.py"), 'print("skill-script-ran")\n')
+              await fs.writeFile(unrelated, "outside-skill")
+            })
+            yield* withSession(workspace, () => Effect.gen(function* () {
+              const skills = yield* Skill.Service
+              yield* skills.transform(editor => editor.add(Skill.Info.make({
+                id: Skill.ID.make("probe"), name: Skill.Name.make("probe"), description: "Probe",
+                path: AbsolutePath.make(path.join(skill, "SKILL.md")), content: "# probe",
+              })))
+              const shell = yield* Shell.Service
+              const started = yield* shell.create({
+                command: `python3 ${skill}/scripts/probe.py; if printf x > ${skill}/scripts/written 2>/dev/null; then exit 12; fi; `
+                  + `if [ -e ${unrelated} ]; then exit 13; fi`,
+                timeout: 10_000,
+              })
+              const info = yield* shell.wait(started.id)
+              expect((yield* shell.output(started.id)).output).toContain("skill-script-ran")
+              expect(info.exit).toBe(0)
+            }))
+            expect(yield* Effect.promise(() => fs.access(path.join(skill, "scripts", "written")).then(() => true, () => false))).toBe(false)
+          })
+        }, tmp => Effect.promise(() => tmp[Symbol.asyncDispose]())),
+        previous => Effect.sync(() => {
+          if (previous === undefined) delete process.env.OPENCODE_WORKSPACE_ONLY
+          else process.env.OPENCODE_WORKSPACE_ONLY = previous
+        }),
+      ), { timeout: 15_000 },
+    )
+
     productionIt.live(
       "workspace-only shell does not inherit server secrets",
       () =>
@@ -1591,6 +1638,8 @@ describe("ShellTool", () => {
                   JSON.stringify({ experimental: { portable_shell_scanner: portable } }),
                 ),
               )
+              // Only truncating an existing file asks for approval; creating `marker` would not.
+              if (!portable) yield* Effect.promise(() => Bun.write(path.join(tmp.path, "marker"), "before"))
               const settled = yield* withSession(tmp.path, (registry) =>
                 Effect.gen(function* () {
                   const selection = yield* ShellSelect.Service
@@ -1612,7 +1661,7 @@ describe("ShellTool", () => {
               }
               expect(settled.status).toBe("completed")
               expect(settled.metadata?.exit).not.toBe(0)
-              expect(assertions.map((item) => item.action)).toEqual(["delete", "shell"])
+              expect(assertions.map((item) => item.action)).toEqual(["truncate", "shell"])
               expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "marker")).text())).toBe("hello")
             }),
           (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]().then(() => undefined)),
@@ -1942,7 +1991,7 @@ describe("ShellTool", () => {
 
             const shell = yield* Shell.Service
             if (!shellID) return
-            const id = ID.make(shellID)
+            const id = ShellSchema.ID.make(shellID)
             const info = yield* shell.get(id)
             expect(settled.content).toEqual([
               {
@@ -2036,7 +2085,7 @@ describe("ShellTool", () => {
               // The command can finish while its initial progress update is being published.
               progress: (update) =>
                 typeof update.shellID === "string"
-                  ? shell.wait(ID.make(update.shellID)).pipe(Effect.orDie, Effect.asVoid)
+                  ? shell.wait(ShellSchema.ID.make(update.shellID)).pipe(Effect.orDie, Effect.asVoid)
                   : Effect.void,
             })
 
@@ -2071,7 +2120,7 @@ describe("ShellTool", () => {
               const timedID = timed.metadata?.shellID
               expect(typeof timedID).toBe("string")
               if (typeof timedID !== "string") return
-              const timedShellID = ID.make(timedID)
+              const timedShellID = ShellSchema.ID.make(timedID)
               yield* shell.timeout(timedShellID, 50)
               expect((yield* shell.wait(timedShellID)).status).toBe("timeout")
 
@@ -2082,7 +2131,7 @@ describe("ShellTool", () => {
               const clearedID = cleared.metadata?.shellID
               expect(typeof clearedID).toBe("string")
               if (typeof clearedID !== "string") return
-              const clearedShellID = ID.make(clearedID)
+              const clearedShellID = ShellSchema.ID.make(clearedID)
               yield* shell.timeout(clearedShellID, 0)
               yield* Effect.sleep(Duration.millis(100))
               expect((yield* shell.get(clearedShellID)).status).toBe("running")
@@ -2160,7 +2209,7 @@ describe("ShellTool", () => {
               const shellID = settled.metadata?.shellID
               expect(typeof shellID).toBe("string")
               if (typeof shellID !== "string") return
-              const id = ID.make(shellID)
+              const id = ShellSchema.ID.make(shellID)
               const info = yield* shell.get(id)
               expect(typeof info.pid).toBe("number")
               if (info.pid === undefined) return
@@ -2209,7 +2258,7 @@ describe("ShellTool", () => {
 
             const shell = yield* Shell.Service
             if (!shellID) return
-            const id = ID.make(shellID)
+            const id = ShellSchema.ID.make(shellID)
             const info = yield* shell.get(id)
             expect(settled.content?.[0]).toEqual({
               type: "text",
