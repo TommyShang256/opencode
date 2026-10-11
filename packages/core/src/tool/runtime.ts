@@ -62,10 +62,89 @@ export const execute = (tool: Tool.Info<any, any>, input: unknown, context: Tool
 const decodeInput = (tool: Tool.Info<any, any>, value: unknown) =>
   Effect.gen(function* () {
     const result = yield* validateInput(tool.input, value)
-    if (result.issues)
+    if (!result.issues) return result.value
+    const parsed = parseStringifiedArguments(value, invalidKeys(result.issues))
+    if (parsed.unparsable.length > 0)
+      return yield* new Tool.Error({
+        message: formatInputIssues(
+          effectiveName(tool),
+          parsed.unparsable.map(({ key, reason }) => ({
+            path: [key],
+            message: `Expected object; the value is JSON text that does not parse (${reason}). Send it as an object, not a string`,
+          })),
+          value,
+        ),
+      })
+    if (parsed.value === value)
       return yield* new Tool.Error({ message: formatInputIssues(effectiveName(tool), result.issues, value) })
-    return result.value
+    // Once the text parses, what is still wrong with the object is the useful report.
+    const retried = yield* validateInput(tool.input, parsed.value)
+    if (!retried.issues) return retried.value
+    return yield* new Tool.Error({ message: formatInputIssues(effectiveName(tool), retried.issues, parsed.value) })
   })
+
+// Some models send an object or array argument as its JSON text. Only the top-level arguments that failed
+// validation are parsed and retried, so a parameter that really takes a string still receives the string.
+const invalidKeys = (issues: ReadonlyArray<StandardSchemaV1.Issue>) =>
+  new Set(
+    issues.flatMap((issue) => {
+      const first = issue.path?.[0]
+      const key = typeof first === "object" ? first.key : first
+      return typeof key === "string" ? [key] : []
+    }),
+  )
+
+// Some upstream models drop trailing closing brackets of JSON text arguments; when only those are missing the
+// completion is unambiguous. DataAgent's invocation verifier applies the same completion.
+const closeUnbalanced = (text: string) => {
+  const open: string[] = []
+  let inString = false
+  let escaped = false
+  for (const char of text) {
+    if (inString) {
+      if (escaped) escaped = false
+      else if (char === "\\") escaped = true
+      else if (char === '"') inString = false
+    } else if (char === '"') inString = true
+    else if (char === "{" || char === "[") open.push(char)
+    else if (char === "}" || char === "]") {
+      if (open.pop() !== (char === "}" ? "{" : "[")) return undefined
+    }
+  }
+  if (inString || open.length === 0) return undefined
+  return text + open.reverse().map((char) => (char === "{" ? "}" : "]")).join("")
+}
+
+const parseStringifiedArguments = (value: unknown, keys: ReadonlySet<string>) => {
+  const unparsable: { key: string; reason: string }[] = []
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return { value, unparsable }
+  let changed = false
+  const parsed = Object.fromEntries(
+    Object.entries(value).map(([key, item]) => {
+      if (!keys.has(key) || typeof item !== "string") return [key, item]
+      const text = item.trim()
+      // A dropped trailing bracket can leave "{...]" behind, so either closing bracket qualifies.
+      if (!/^[{[]/.test(text) || !/[}\]]$/.test(text)) return [key, item]
+      try {
+        const json: unknown = JSON.parse(text)
+        changed = true
+        return [key, json]
+      } catch (error) {
+        const closed = closeUnbalanced(text)
+        if (closed !== undefined) {
+          try {
+            const json: unknown = JSON.parse(closed)
+            changed = true
+            return [key, json]
+          } catch {}
+        }
+        unparsable.push({ key, reason: error instanceof Error ? error.message : String(error) })
+        return [key, item]
+      }
+    }),
+  )
+  return { value: changed ? parsed : value, unparsable }
+}
 
 const validateInput = (
   schema: Tool.ValueSchema<any>,

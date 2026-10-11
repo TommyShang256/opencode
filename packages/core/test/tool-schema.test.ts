@@ -410,3 +410,44 @@ test("missing external input schemas fall back to an empty schema", () => {
     inputSchema: {},
   })
 })
+
+test("object arguments sent as JSON text are parsed when the text form fails validation", async () => {
+  const input = {
+    type: "object",
+    properties: {
+      request: { type: "object", properties: { topicId: { type: "string" } }, required: ["topicId"] },
+      note: { type: "string" },
+    },
+    required: ["request"],
+  }
+  const received: unknown[] = []
+  const tool: Info = {
+    name: "stringified",
+    description: "Stringified",
+    input,
+    execute: (value) => Effect.sync(() => (received.push(value), { content: "ok" })),
+  }
+
+  await Effect.runPromise(execute(tool, { request: '{"topicId":"default"}', note: '{"kept":"as text"}' }, context))
+  await Effect.runPromise(execute(tool, { request: { topicId: "default" }, note: '{"kept":"as text"}' }, context))
+  // Only the argument that failed is parsed; a string parameter keeps its JSON-looking text.
+  expect(received).toEqual([
+    { request: { topicId: "default" }, note: '{"kept":"as text"}' },
+    { request: { topicId: "default" }, note: '{"kept":"as text"}' },
+  ])
+
+  // Parsed text that is still wrong reports what is wrong with the object.
+  const wrong = await Effect.runPromise(Effect.flip(execute(tool, { request: '{"topicId":1}' }, context)))
+  expect(wrong.message).toStartWith('Invalid arguments for tool "stringified":\n- request.topicId: ')
+  expect(wrong.message).toContain('"topicId": 1')
+  // Text that does not parse says so instead of only "Expected object".
+  const broken = await Effect.runPromise(Effect.flip(execute(tool, { request: '{"topicId":"default"}}' }, context)))
+  expect(broken.message).toStartWith(
+    'Invalid arguments for tool "stringified":\n- request: Expected object; the value is JSON text that does not parse (',
+  )
+  expect(broken.message).toContain("Send it as an object, not a string")
+  // Text that only lacks its trailing closing brackets is completed.
+  await Effect.runPromise(execute(tool, { request: '{"topicId":"default","tags":["a"]' }, context))
+  expect(received).toHaveLength(3)
+  expect(received[2]).toEqual({ request: { topicId: "default", tags: ["a"] } })
+})
