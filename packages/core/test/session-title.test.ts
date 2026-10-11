@@ -822,6 +822,23 @@ test("cleanMessageText strips environment, user_message and attachments wrapper 
   expect(SessionTitle.cleanMessageText(withAttachments)).toBe("请分析这份数据")
 })
 
+test("cleanMessageText keeps only the user's words when a host wraps them among instruction blocks", () => {
+  const wrapped = `<server_tools>
+You can render rich UI surfaces with render_a2ui.
+</server_tools>
+
+<project_resources_json>{"project":{"id":"default"},"knowledge":[]}</project_resources_json>
+
+<user_message>
+请整理知识资料“通信分析SQL与校验方式”
+</user_message>
+
+<delivery_execution>
+If the user supplied the needed facts inline, do not inspect workspace files.
+</delivery_execution>`
+  expect(SessionTitle.cleanMessageText(wrapped)).toBe("请整理知识资料“通信分析SQL与校验方式”")
+})
+
 test("cleanTitle does not reject titles containing 'query' in natural language", () => {
   expect(SessionTitle.cleanTitle("ClickHouse slow query 优化")).toBe("ClickHouse slow query 优化")
   expect(SessionTitle.cleanTitle("GraphQL query 语法解析")).toBe("GraphQL query 语法解析")

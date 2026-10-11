@@ -39,9 +39,14 @@ export const isUntitled = (session: SessionSchema.Info) =>
 const DSML_TOOL_CALL = /<[|\uFF5C]+DSML[|\uFF5C]+\s*(?:tool_)?calls>/i
 const DSML_TOOL_CALL_BLOCK = /<[|\uFF5C]+DSML[|\uFF5C]+\s*(?:tool_)?calls>[\s\S]*?(?:<\/[|\uFF5C]+DSML[|\uFF5C]+\s*(?:tool_)?calls>|$)/gi
 
+const USER_MESSAGE_BLOCK = /<user_message>([\s\S]*?)(?:<\/user_message>|$)/gi
+
 export const cleanMessageText = (raw: string): string => {
   if (!raw) return ""
-  let cleaned = raw
+  // Hosts may wrap the user's words in <user_message> among their own instruction and context blocks
+  // (server tools, project resources, delivery rules). Only the user's words describe the conversation.
+  const userMessages = [...raw.matchAll(USER_MESSAGE_BLOCK)].map((match) => match[1] ?? "")
+  let cleaned = (userMessages.length > 0 ? userMessages.join("\n") : raw)
     .replace(/<tool_call[\s\S]*?(?:<\/tool_call>|$)/gi, "")
     .replace(DSML_TOOL_CALL_BLOCK, "")
     .replace(/<tool_response[\s\S]*?(?:<\/tool_response>|$)/gi, "")
