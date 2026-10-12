@@ -29,13 +29,35 @@ describe("standalone server build", () => {
     const workspaces: readonly string[] = workspacePackages
 
     expect(lock).not.toContain("ghostty-web")
-    expect(lock).not.toContain('"@opencode-ai/cli"')
-    expect(lock).not.toContain('"@opencode-ai/tui"')
+    expect(lock).not.toContain('"@opencode/cli"')
+    expect(lock).not.toContain('"@opencode/tui"')
     expect(lock).not.toContain("packages/app")
     expect(workspaces).toContain("packages/server")
     expect(workspaces).not.toContain("packages/app")
     expect(workspaces).not.toContain("packages/cli")
     expect(workspaces).not.toContain("packages/tui")
+  })
+
+  test("includes current workspace names and all workspace dependencies", async () => {
+    const lock = Bun.JSONC.parse(await Bun.file(new URL("../bun.standalone.lock", import.meta.url)).text())
+    const manifests = await Promise.all(
+      workspacePackages.map((workspace) => Bun.file(new URL(`${workspace}/package.json`, root)).json()),
+    )
+    const names = new Set(manifests.map((manifest) => manifest.name))
+
+    expect(workspacePackages).toContain("packages/plugin-browser")
+    for (const [index, manifest] of manifests.entries()) {
+      const workspace = workspacePackages[index]
+      expect(lock.workspaces[workspace].name).toBe(manifest.name)
+      expect(lock.workspaces[workspace].version).toBe(manifest.version)
+      expect(lock.packages[manifest.name]).toEqual([`${manifest.name}@workspace:${workspace}`])
+      for (const section of ["dependencies", "devDependencies", "peerDependencies"]) {
+        expect(lock.workspaces[workspace][section]).toEqual(manifest[section])
+        for (const [name, version] of Object.entries(manifest[section] ?? {})) {
+          if (typeof version === "string" && version.startsWith("workspace:")) expect(names.has(name)).toBe(true)
+        }
+      }
+    }
   })
 
   test("keeps the Huawei build command and legacy artifact names", async () => {

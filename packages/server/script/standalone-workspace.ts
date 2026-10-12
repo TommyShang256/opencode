@@ -9,6 +9,7 @@ export const workspacePackages = [
   "packages/httpapi-codegen",
   "packages/http-recorder",
   "packages/plugin",
+  "packages/plugin-browser",
   "packages/protocol",
   "packages/schema",
   "packages/script",

@@ -46,7 +46,7 @@ bun run build:server --install
 
 `--install` 不直接使用 monorepo 的共享 `bun.lock`。共享 lockfile 即使带 workspace filter，也可能让安装器解析未选 workspace 的 GitHub tarball，这会让不能访问 GitHub 的内网构建因 App-only `ghostty-web` 失败。
 
-统一入口会自动创建临时 Server-only workspace，只复制 Server 及其依赖包，并使用 `packages/server/bun.standalone.lock` 做 frozen install。`@opencode-ai/script` 是 Server 的构建期依赖；CLI、TUI、App、Desktop 和 `ghostty-web` 都不在该 workspace 或 lockfile 中。临时目录中的安装、编译、健康验证结束后，只把 `packages/server/dist` 拷回当前 checkout，不修改主仓 `package.json`、`bun.lock` 或现有 `node_modules`。当前 3.5 GiB 服务器还必须通过主机提供的保护器执行：
+统一入口会自动创建临时 Server-only workspace，只复制 Server 及其依赖包，并使用 `packages/server/bun.standalone.lock` 做 frozen install。`@opencode/script` 是 Server 的构建期依赖，`@opencode/plugin-browser` 随 Core 的 workspace 依赖一并复制；CLI、TUI、App、Desktop 和 `ghostty-web` 都不在该 workspace 或 lockfile 中。临时目录中的安装、编译、健康验证结束后，只把 `packages/server/dist` 拷回当前 checkout，不修改主仓 `package.json`、`bun.lock` 或现有 `node_modules`。当前 3.5 GiB 服务器还必须通过主机提供的保护器执行：
 
 ```bash
 /home/ubuntu/.local/bin/safe-build -- bun run build:server --install
@@ -57,6 +57,8 @@ bun run build:server --install
 ```bash
 /home/ubuntu/.local/bin/safe-build -- bun run build:server
 ```
+
+修改 Server 依赖包或 workspace 名称后，运行 `bun --smol packages/server/script/update-standalone-lock.ts` 重新生成 standalone lockfile，并与 `standalone-workspace.ts` 一起提交；生成时可通过 `OPENCODE_BUILD_REGISTRY` 指定 registry。
 
 ## 公司内网 Registry
 
