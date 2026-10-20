@@ -10,7 +10,7 @@ import {
   type ToolCall,
 } from "@opencode/ai"
 import type { Agent } from "@opencode/schema/agent"
-import { Cause, Clock, Data, Effect, Exit, Fiber, Option, Stream } from "effect"
+import { Cause, Clock, Data, Deferred, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { SessionError } from "@opencode/schema/session-error"
 import { Bus } from "../../bus.js"
 import { Permission } from "../../permission.js"
@@ -92,7 +92,7 @@ export const make = Effect.gen(function* () {
     }> = []
     const clientToolCalls: ToolCall[] = []
     const interruptTools = Effect.suspend(() => Fiber.interruptAll(toolRuns.map((run) => run.fiber)))
-    const executeTool = (call: ToolCall) => {
+    const executeTool = (call: ToolCall, called: Deferred.Deferred<void>) => {
       if (input.prepared.request.toolChoice?.type === "none")
         return new Tool.Error({ message: "Tools are disabled after the maximum agent steps" })
       return input.prepared.executeTool({
@@ -101,6 +101,11 @@ export const make = Effect.gen(function* () {
         messageID: input.assistantMessageID,
         call,
         progress: (update) => publisher.progress(call.id, update),
+        onInput: (value) =>
+          publisher.publish({ ...call, input: value }).pipe(
+            Effect.andThen(Deferred.succeed(called, undefined)),
+            Effect.asVoid,
+          ),
       })
     }
 
@@ -120,7 +125,13 @@ export const make = Effect.gen(function* () {
             overflowFailure = event
             return
           }
-          yield* publisher.publish(event)
+          if (
+            event.type === "tool-call" &&
+            !event.providerExecuted &&
+            input.prepared.toolTarget(event.name) === "local"
+          )
+            yield* publisher.prepareToolCall(event)
+          else yield* publisher.publish(event)
           if (event.type !== "tool-call" || event.providerExecuted) return
           if (input.prepared.toolTarget(event.name) === "client") {
             const admitted = yield* Effect.gen(function* () {
@@ -152,18 +163,21 @@ export const make = Effect.gen(function* () {
             yield* publisher.waitForClient(event.id, admitted)
             return
           }
+          const called = yield* Deferred.make<void>()
           toolRuns.push({
             call: event,
             fiber: yield* Effect.uninterruptibleMask((restore) =>
-              restore(executeTool(event)).pipe(
+              restore(executeTool(event, called)).pipe(
                 Effect.flatMap(toolOutput.truncate),
                 Effect.flatMap((outcome) => publisher.toolExecution(event.id, event.name, outcome)),
                 Effect.catchTag("Tool.Error", (error) =>
                   publisher.failTool(event.id, toSessionError(error), error.metadata).pipe(Effect.asVoid),
                 ),
               ),
-            ).pipe(Effect.forkScoped),
+            ).pipe(Effect.ensuring(Deferred.succeed(called, undefined)), Effect.forkScoped),
           })
+          // Preserve call order without waiting for the tool's side effects to finish.
+          yield* Deferred.await(called)
         }),
       ),
       Effect.ensuring(publisher.flush()),

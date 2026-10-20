@@ -338,6 +338,18 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
     })
   })
 
+  const prepareToolCall = Effect.fnUntraced(
+    function* (event: { id: string; name: string; input: unknown }) {
+      outputStarted = true
+      const tool = tools.get(event.id) ?? (yield* startToolInput(event))
+      if (tool.called || tool.settled) return yield* Effect.die(new Error(`Duplicate tool call: ${event.id}`))
+      if (toolInput.has(event.id)) yield* endToolInput(event, JSON.stringify(event.input))
+      if (tool.name !== event.name)
+        return yield* Effect.die(new Error(`Tool call name changed for ${event.id}: ${tool.name} -> ${event.name}`))
+    },
+    Effect.uninterruptible,
+  )
+
   const flush = Effect.fn("SessionRunner.flush")(flushFragments)
 
   const failTool = Effect.fnUntraced(function* (id: string, error: SessionError.Error, metadata?: Tool.Metadata) {
@@ -612,6 +624,7 @@ export const createLLMEventPublisher = (bus: Pick<Bus.Interface, "publish">, inp
       return publishTraced(event)
     },
     progress,
+    prepareToolCall,
     waitForClient,
     toolExecution,
     flush,
