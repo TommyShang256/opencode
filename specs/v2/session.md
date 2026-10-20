@@ -73,6 +73,8 @@ Before each Step, the runner reloads Session History, resolves the selected agen
 
 Each complete local tool call is durable before side effects begin. Local calls start eagerly and may run concurrently, but terminal outcome publication remains serialized. Every local and hosted call reaches durable success or failure before the Step publishes its single terminal ended or failed event.
 
+Local tool calls become running only after pre-execution hooks and schema decoding. The called event records the final input passed to the executor, while input-ended events retain the original arguments. Admission failures settle the streaming call without executing it. Client-owned and provider-hosted calls keep their existing admission boundaries.
+
 Tool calls belong to their assistant message. A tool-call `id` is unique only within that Step, so durable tool events also carry `assistantMessageID`.
 
 At drain start, orphan reconciliation fails tool calls still projected as streaming or running from an earlier process before further model work. It preserves the original assistant attribution and never directly replays ambiguous side effects.

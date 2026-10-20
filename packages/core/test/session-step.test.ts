@@ -9,8 +9,11 @@ import { AppNodeBuilder } from "@opencode/core/effect/app-node-builder"
 import { EventTable } from "@opencode/core/event/sql"
 import { Project } from "@opencode/core/project"
 import { ProjectTable } from "@opencode/core/project/sql"
+import { PluginHooks } from "@opencode/core/plugin/hooks"
+import { ToolInputRepairPlugin } from "@opencode/core/plugin/tool-input-repair"
 import { AbsolutePath, RelativePath } from "@opencode/core/schema"
 import { Session } from "@opencode/core/session"
+import { decodeMessageRow } from "@opencode/core/session/history"
 import { SessionMessage } from "@opencode/core/session/message"
 import { SessionProjector } from "@opencode/core/session/projector"
 import { SessionRunnerModel } from "@opencode/core/session/runner/model"
@@ -18,19 +21,148 @@ import { SessionStep } from "@opencode/core/session/runner/step"
 import { SessionMessageTable, SessionTable } from "@opencode/core/session/sql"
 import { Snapshot } from "@opencode/core/snapshot"
 import { ToolOutput } from "@opencode/core/tool-output"
+import { Tool } from "@opencode/core/tool"
 import { Money } from "@opencode/schema/money"
 import { LayerNode } from "@opencode/util/effect/layer-node"
 import { asc, eq } from "drizzle-orm"
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
+import { host } from "./plugin/host"
 
 const it = testEffect(
   Layer.merge(
-    AppNodeBuilder.build(LayerNode.group([Database.node, Bus.node, SessionProjector.node, ToolOutput.node]), [
-      Bus.node.replace(Bus.configured({ persist: true })),
-    ]),
+    AppNodeBuilder.build(
+      LayerNode.group([Database.node, Bus.node, SessionProjector.node, ToolOutput.node, Tool.node, PluginHooks.node]),
+      [Bus.node.replace(Bus.configured({ persist: true }))],
+    ),
     TestLLM.testLayer(),
   ),
+)
+
+it.effect("persists the effective local tool input before execution without changing its call identity", () =>
+  Effect.gen(function* () {
+    const db = (yield* Database.Service).db
+    const llm = yield* TestLLM.Test
+    const tools = yield* Tool.Service
+    const hooks = yield* PluginHooks.Service
+    const sessionID = Session.ID.create()
+    const base = host()
+    yield* ToolInputRepairPlugin.Plugin.effect(
+      host({
+        tool: {
+          ...base.tool,
+          list: tools.list,
+          hook: (name, callback) => hooks.register("tool", name, callback),
+        },
+      }),
+    )
+    yield* db
+      .insert(ProjectTable)
+      .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
+      .run()
+    yield* db
+      .insert(SessionTable)
+      .values({ id: sessionID, project_id: Project.ID.global, slug: "input", directory: "/project", version: "test" })
+      .run()
+    const steps = yield* SessionStep.make.pipe(Effect.provide(Snapshot.noopLayer))
+    const model = SessionRunnerModel.resolved(
+      LanguageModel.make({ id: "test-model", provider: "test", route: OpenAIChat.route }),
+      {
+        capabilities: { tools: true, input: ["text"], output: ["text"] },
+        limit: { context: 100_000, output: 1_000 },
+        cost: [],
+      },
+    )
+    for (const fixture of [
+      { input: { request: {} }, expected: {}, invalid: false, typed: false },
+      { input: { arguments: {} }, expected: {}, invalid: false, typed: false },
+      { input: {}, expected: {}, invalid: false, typed: false },
+      { input: "{}", expected: {}, invalid: false, typed: false },
+      { input: { count: "2", extra: true }, expected: { count: 2 }, invalid: false, typed: true },
+      { input: { count: "invalid" }, expected: {}, invalid: true, typed: true },
+    ]) {
+      const assistantMessageID = SessionMessage.ID.create()
+      let executions = 0
+      yield* tools.transform((editor) =>
+        editor.add({
+          name: "lookup",
+          description: "Read current state",
+          options: { namespace: "backend", codemode: false },
+          input: fixture.typed
+            ? Schema.Struct({ count: Schema.Int })
+            : { type: "object", properties: {}, additionalProperties: false },
+          execute: (input, context) =>
+            Effect.gen(function* () {
+              const message = yield* db
+                .select()
+                .from(SessionMessageTable)
+                .where(eq(SessionMessageTable.id, context.messageID))
+                .get()
+              expect(context.sessionID).toBe(sessionID)
+              expect(context.id).toBe(Tool.CallID.make("call-lookup"))
+              expect(input).toEqual(fixture.expected)
+              expect(message?.data).toMatchObject({
+                content: [
+                  {
+                    id: context.id,
+                    name: "backend_lookup",
+                    state: { status: "running", input },
+                  },
+                ],
+              })
+              const native = message ? yield* decodeMessageRow(message) : undefined
+              const persisted =
+                native?.type === "assistant"
+                  ? native.content
+                      .flatMap((part) => (part.type === "tool" ? [part] : []))
+                      .find((part) => part.id === context.id)
+                  : undefined
+              expect(persisted?.state.input).toEqual(input)
+              executions++
+              return { content: "ok" }
+            }).pipe(Effect.orDie),
+        }),
+      )
+      const snapshot = yield* tools.snapshot()
+      yield* llm.push(
+        TestLLM.complete(
+          { reason: { normalized: "tool-calls" } },
+          LLMEvent.toolCall({ id: "call-lookup", name: "backend_lookup", input: fixture.input }),
+        ),
+      )
+      yield* steps.attempt({
+        isLocationClosed: () => false,
+        sessionID,
+        assistantMessageID,
+        agent: Agent.defaultID,
+        model,
+        prepared: {
+          retry: () => Effect.void,
+          request: LLM.request({ model: model.model, prompt: "Look up state" }),
+          options: {},
+          toolTarget: () => "local",
+          executeTool: snapshot.execute,
+        },
+        retry: () => Effect.succeed({ retry: false }),
+        recoverContinuation: false,
+        recoverOverflow: Effect.succeed(false),
+      })
+      const message = yield* db
+        .select()
+        .from(SessionMessageTable)
+        .where(eq(SessionMessageTable.id, assistantMessageID))
+        .get()
+      expect(message?.data).toMatchObject({ content: [{ state: { status: fixture.invalid ? "error" : "completed" } }] })
+      expect(executions).toBe(fixture.invalid ? 0 : 1)
+      const events = (yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, sessionID)).all()).filter(
+        (event) => event.data.assistantMessageID === assistantMessageID,
+      )
+      expect(events.filter((event) => event.type === "session.tool.called.1")).toHaveLength(fixture.invalid ? 0 : 1)
+      expect(events.find((event) => event.type === "session.tool.input.ended.1")?.data.text).toBe(
+        JSON.stringify(fixture.input),
+      )
+    }
+  }),
 )
 
 for (const fixture of [
@@ -110,11 +242,15 @@ for (const fixture of [
             request: LLM.request({ model: model.model, prompt: "Run one tool", toolChoice: fixture.toolChoice }),
             options: {},
             toolTarget: () => "local",
-            executeTool: () =>
-              Effect.sync(() => {
-                executions++
-                return { content: [{ type: "text", text: "Completed tool" }] }
-              }),
+            executeTool: (input) =>
+              input.onInput!(input.call.input).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    executions++
+                    return { content: [{ type: "text" as const, text: "Completed tool" }] }
+                  }),
+                ),
+              ),
           },
           retry: (_cause, _error, retry) =>
             Effect.succeed(retry ? { retry: true, attempt: 2, delay: 0 } : { retry: false }),

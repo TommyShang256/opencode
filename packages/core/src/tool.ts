@@ -63,6 +63,8 @@ export interface Snapshot {
     readonly messageID: SessionMessage.ID
     readonly call: ToolCall
     readonly progress?: (update: Tool.Metadata) => Effect.Effect<void>
+    /** Commits the final decoded input before the executor can perform side effects. */
+    readonly onInput?: (input: unknown) => Effect.Effect<void>
     /** Surviving request definitions, keyed by the names advertised after session context hooks. */
     readonly definitions?: ReadonlyMap<string, ToolDefinition>
   }) => Effect.Effect<NormalizedResult, Tool.Error>
@@ -121,12 +123,13 @@ const layer = Layer.effect(
       name: string,
       input: unknown,
       context: Tool.Context,
+      onInput?: (input: unknown) => Effect.Effect<void>,
     ) {
       yield* hooks.trigger("tool", "execute.validate", {
         tool: name, sessionID: context.sessionID, agent: context.agent,
         messageID: context.messageID, id: context.id, input,
       })
-      const execution = yield* execute(tool, input, context).pipe(
+      const execution = yield* execute(tool, input, context, onInput).pipe(
         Effect.map((value) => ({ value })),
         Effect.catchTag("Tool.Error", (failure) => Effect.succeed({ failure })),
       )
@@ -294,9 +297,9 @@ const layer = Layer.effect(
                 return yield* new Tool.Error({ message: `Tool is not available for this request: ${event.tool}` })
               const name = requested?.name ?? event.tool
               if (name === "execute" && codeModeTool)
-                return yield* executeTool(codeModeTool, name, event.input, context)
+                return yield* executeTool(codeModeTool, name, event.input, context, input.onInput)
               const tool = direct.get(name)
-              if (tool) return yield* executeTool(tool, name, event.input, context)
+              if (tool) return yield* executeTool(tool, name, event.input, context, input.onInput)
               return yield* new Tool.Error({
                 message: `No tool named "${name}" is currently available. Please use a tool from the available tool list.`,
               })
