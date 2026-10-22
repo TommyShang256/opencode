@@ -55,6 +55,8 @@ import type {
   SessionCommandOutput,
   SessionSkillInput,
   SessionSkillOutput,
+  SessionSteerSyntheticInput,
+  SessionSteerSyntheticOutput,
   SessionSyntheticInput,
   SessionSyntheticOutput,
   SessionShellInput,
@@ -545,6 +547,17 @@ const EndpointSessionSkill = (raw: RawClient["server.session"]) => (input: Sessi
     }).pipe(Effect.mapError(mapClientError)),
   )
 
+const EndpointSessionSteerSynthetic = (raw: RawClient["server.session"]) => (input: SessionSteerSyntheticInput) =>
+  preserveEffect<SessionSteerSyntheticOutput>()(
+    raw["session.steerSynthetic"]({
+      params: { sessionID: input["sessionID"] },
+      payload: { id: input["id"], text: input["text"], metadata: input["metadata"] },
+    }).pipe(
+      Effect.mapError(mapClientError),
+      Effect.map((value) => value.data),
+    ),
+  )
+
 const EndpointSessionSynthetic = (raw: RawClient["server.session"]) => (input: SessionSyntheticInput) =>
   preserveEffect<SessionSyntheticOutput>()(
     raw["session.synthetic"]({
@@ -792,6 +805,7 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
   clientToolResults: EndpointSessionClientToolResults(raw),
   command: EndpointSessionCommand(raw),
   skill: EndpointSessionSkill(raw),
+  steerSynthetic: EndpointSessionSteerSynthetic(raw),
   synthetic: EndpointSessionSynthetic(raw),
   shell: EndpointSessionShell(raw),
   compact: EndpointSessionCompact(raw),

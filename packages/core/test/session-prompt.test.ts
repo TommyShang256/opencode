@@ -37,6 +37,7 @@ import { testEffect } from "./lib/effect"
 const executionCalls: Session.ID[] = []
 const interruptCalls: Session.ID[] = []
 const interruptContinuations: Array<boolean | undefined> = []
+const interruptReasons: Array<string | undefined> = []
 const wakeCalls: Session.ID[] = []
 const activeSessions = new Set<Session.ID>()
 const execution = Layer.succeed(
@@ -52,6 +53,7 @@ const execution = Layer.succeed(
       Effect.sync(() => {
         interruptCalls.push(sessionID)
         interruptContinuations.push(options?.resume)
+        interruptReasons.push(options?.reason)
         return activeSessions.delete(sessionID)
       }),
     wake: (sessionID) =>
@@ -956,6 +958,104 @@ describe("Session.prompt", () => {
       expect(differing).toEqual(first)
       expect(first.payload.metadata).toEqual({ source: "api" })
       expect(yield* admittedCount).toBe(1)
+    }),
+  )
+
+  it.effect("interrupts once for new immediate guidance, including concurrent and promoted retries", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const bus = yield* Bus.Service
+      const database = yield* Database.Service
+      interruptCalls.length = 0
+      interruptContinuations.length = 0
+      interruptReasons.length = 0
+      const input = { id: messageID, sessionID, text: "Use the new rule", immediate: true }
+      const entries = yield* Effect.all([session.synthetic(input), session.synthetic(input)], {
+        concurrency: "unbounded",
+      })
+      expect(yield* admitted(messageID)).toMatchObject({ payload: { text: input.text }, delivery: "steer" })
+      yield* SessionInbox.promote(database.db, bus, sessionID, "steer")
+      const replay = yield* session.synthetic({ ...input, text: "Must not replace the first input" })
+      expect(entries[1]).toEqual(entries[0])
+      expect(replay.payload.text).toBe(input.text)
+      expect(interruptCalls).toEqual([sessionID])
+      expect(interruptContinuations).toEqual([true])
+      expect(interruptReasons).toEqual(["superseded"])
+      expect(yield* admittedCount).toBe(0)
+    }),
+  )
+
+  for (const promoted of [false, true]) {
+    it.effect(`replays ${promoted ? "promoted" : "pending"} immediate guidance across a staged revert`, () =>
+      Effect.gen(function* () {
+        yield* setup
+        const session = yield* Session.Service
+        const bus = yield* Bus.Service
+        const database = yield* Database.Service
+        const input = { id: messageID, sessionID, text: "Keep the first admission", immediate: true }
+        const first = yield* session.synthetic(input)
+        if (promoted) yield* SessionInbox.promote(database.db, bus, sessionID, "steer")
+        yield* bus.publish(SessionEvent.RevertEvent.Staged, {
+          sessionID,
+          revert: { messageID, files: [] },
+        })
+        interruptCalls.length = 0
+        wakeCalls.length = 0
+
+        const replay = yield* session.synthetic({ ...input, text: "Ignored retry" })
+        const rejected = yield* session.synthetic({ ...input, id: SessionMessage.ID.create() }).pipe(Effect.flip)
+
+        expect(replay.payload).toEqual(first.payload)
+        expect(rejected).toMatchObject({ _tag: "Session.SyntheticConflictError" })
+        expect(interruptCalls).toEqual([])
+        expect(wakeCalls).toEqual([])
+        expect((yield* session.get(sessionID)).revert?.messageID).toBe(messageID)
+      }),
+    )
+  }
+
+  it.effect("rejects immediate child guidance before admission without changing ordinary synthetic input", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* Session.Service
+      const database = yield* Database.Service
+      const child = Session.ID.make("ses_immediate_child")
+      yield* database.db
+        .insert(SessionTable)
+        .values({
+          id: child,
+          parent_id: sessionID,
+          project_id: Project.ID.global,
+          slug: "child",
+          directory: "/project",
+          title: "child",
+          version: "test",
+        })
+        .run()
+        .pipe(Effect.orDie)
+      interruptCalls.length = 0
+      wakeCalls.length = 0
+
+      const rejected = yield* session
+        .synthetic({ id: messageID, sessionID: child, text: "Do not cancel the child Job", immediate: true })
+        .pipe(Effect.flip)
+
+      expect(rejected).toMatchObject({ _tag: "Session.SyntheticConflictError", sessionID: child, inputID: messageID })
+      expect(yield* admitted(messageID)).toBeUndefined()
+      expect(interruptCalls).toEqual([])
+      expect(wakeCalls).toEqual([])
+      const ordinary = yield* session.synthetic({
+        id: messageID,
+        sessionID: child,
+        text: "Boundary input",
+        resume: false,
+      })
+      expect(yield* session.synthetic({ id: messageID, sessionID: child, text: "Ignored", immediate: true })).toEqual(
+        ordinary,
+      )
+      expect(interruptCalls).toEqual([])
+      expect(wakeCalls).toEqual([])
     }),
   )
 

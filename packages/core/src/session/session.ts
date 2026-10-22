@@ -382,36 +382,54 @@ export const make = Effect.fn("Session.make")(function* () {
         metadata?: Record<string, unknown>
         delivery?: SessionInbox.Delivery
         resume?: boolean
+        immediate?: boolean
       },
     ) =>
       Effect.uninterruptible(
-        Effect.gen(function* () {
-          yield* get(sessionID)
-          const inputID = input.id ?? SessionMessage.ID.create()
-          const admittedInput = {
-            type: "synthetic",
-            payload: SessionInbox.SyntheticPayload.make({
-              text: input.text,
-              description: input.description,
-              metadata: input.metadata,
-            }),
-            delivery: SessionInbox.Delivery.make(input.delivery ?? "steer"),
-          } satisfies SessionInbox.Item
-          const admitted = yield* admission
-            .admit({
-              id: inputID,
-              sessionID,
-              item: admittedInput,
-            })
-            .pipe(
-              Effect.catchTag(
-                "SessionInbox.LifecycleConflict",
-                () => new SyntheticConflictError({ sessionID, inputID }),
-              ),
-            )
-          if (input.resume !== false && !(yield* get(sessionID)).revert) yield* execution.wake(sessionID)
-          return admitted
-        }),
+        SessionInbox.serialized(
+          sessionID,
+          Effect.gen(function* () {
+            const current = yield* get(sessionID)
+            const inputID = input.id ?? SessionMessage.ID.create()
+            if (input.immediate) {
+              const existing = yield* admission
+                .reconcile({ id: inputID, sessionID, type: "synthetic", delivery: "steer" })
+                .pipe(
+                  Effect.catchTag(
+                    "SessionInbox.LifecycleConflict",
+                    () => new SyntheticConflictError({ sessionID, inputID }),
+                  ),
+                )
+              if (existing) return existing
+              // Child execution is owned by its Job; superseding it would settle that Job as cancelled.
+              if (current.revert || current.parentID) return yield* new SyntheticConflictError({ sessionID, inputID })
+            }
+            const admittedInput = {
+              type: "synthetic",
+              payload: SessionInbox.SyntheticPayload.make({
+                text: input.text,
+                description: input.description,
+                metadata: input.metadata,
+              }),
+              delivery: SessionInbox.Delivery.make(input.immediate ? "steer" : (input.delivery ?? "steer")),
+            } satisfies SessionInbox.Item
+            const admitted = yield* admission
+              .admit({
+                id: inputID,
+                sessionID,
+                item: admittedInput,
+              })
+              .pipe(
+                Effect.catchTag(
+                  "SessionInbox.LifecycleConflict",
+                  () => new SyntheticConflictError({ sessionID, inputID }),
+                ),
+              )
+            if (input.immediate) yield* execution.interrupt(sessionID, { reason: "superseded", resume: true })
+            else if (input.resume !== false && !(yield* get(sessionID)).revert) yield* execution.wake(sessionID)
+            return admitted
+          }),
+        ),
       ),
   )
   const interrupt = Effect.fn("Session.interrupt")(

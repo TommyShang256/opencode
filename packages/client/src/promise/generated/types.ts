@@ -4593,6 +4593,27 @@ export type SessionSkillInput = {
 
 export type SessionSkillOutput = void
 
+export type SessionSteerSyntheticInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly id: {
+    readonly id: string
+    readonly text: string
+    readonly metadata?: { readonly [x: string]: JsonValue }
+  }["id"]
+  readonly text: {
+    readonly id: string
+    readonly text: string
+    readonly metadata?: { readonly [x: string]: JsonValue }
+  }["text"]
+  readonly metadata?: {
+    readonly id: string
+    readonly text: string
+    readonly metadata?: { readonly [x: string]: JsonValue }
+  }["metadata"]
+}
+
+export type SessionSteerSyntheticOutput = { data: SessionInboxSynthetic }["data"]
+
 export type SessionSyntheticInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly id?: {

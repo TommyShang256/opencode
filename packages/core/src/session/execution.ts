@@ -34,7 +34,7 @@ export interface Interface {
     sessionID: SessionSchema.ID,
     options?: {
       readonly resume?: boolean
-      readonly reason?: "user" | "inactivity"
+      readonly reason?: "user" | "inactivity" | "superseded"
       readonly awaitSettlement?: boolean
     },
   ) => Effect.Effect<boolean>
@@ -45,7 +45,7 @@ export interface Interface {
 /** Routes execution from a Session ID to its selected instance's runner. */
 export class Service extends Context.Service<Service, Interface>()("@opencode/SessionExecution") {}
 
-type InterruptReason = "user" | "shutdown" | "inactivity"
+type InterruptReason = "user" | "shutdown" | "inactivity" | "superseded"
 
 export function terminal(exit: Exit.Exit<void, SessionRunner.RunError>, reason?: InterruptReason) {
   if (Exit.isSuccess(exit)) return { type: "succeeded" as const }
@@ -148,12 +148,14 @@ export const layer = Layer.effect(
               return
             }
             if (outcome.type === "interrupted") {
-              // Deliberate stops release the claim; shutdown keeps it for restart continuity.
+              // Shutdown and superseded handoffs retain the claim until resumed work settles.
               if (outcome.reason !== "shutdown") yield* jobs.cancel(sessionID)
               yield* bus.publish(
                 SessionEvent.Execution.Interrupted,
                 { sessionID, reason: outcome.reason },
-                outcome.reason === "shutdown" ? undefined : releaseOnCommit(sessionID),
+                outcome.reason === "shutdown" || outcome.reason === "superseded"
+                  ? undefined
+                  : releaseOnCommit(sessionID),
               )
               return
             }
@@ -174,8 +176,15 @@ export const layer = Layer.effect(
       isActive: coordinator.isActive,
       interrupt: (sessionID, options) =>
         Effect.gen(function* () {
+          // A stop also cancels recovery when the superseded terminal is already publishing.
+          if (!options?.resume && options?.reason !== "superseded") yield* store.release(sessionID)
           const interrupted = yield* coordinator.interrupt(sessionID, options?.reason ?? "user", options)
           if (!options?.resume) return interrupted
+          // A newly admitted steer may already have reached the interrupted model step.
+          if (options.reason === "superseded") {
+            yield* coordinator.wake(sessionID, "steer")
+            return interrupted
+          }
           // Resume steering input and between-turn control work from the interrupted
           // intent. Queued next-turn prompts stay parked: a steer-scoped drain never
           // promotes them, and a control item behind a queued prompt waits its turn.

@@ -49,6 +49,8 @@ import type {
   SessionCommandOutput,
   SessionSkillInput,
   SessionSkillOutput,
+  SessionSteerSyntheticInput,
+  SessionSteerSyntheticOutput,
   SessionSyntheticInput,
   SessionSyntheticOutput,
   SessionShellInput,
@@ -782,6 +784,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      steerSynthetic: (input: SessionSteerSyntheticInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionSteerSyntheticOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/synthetic/steer`,
+            body: { id: input["id"], text: input["text"], metadata: input["metadata"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401, 404, 409],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       synthetic: (input: SessionSyntheticInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionSyntheticOutput }>(
           {

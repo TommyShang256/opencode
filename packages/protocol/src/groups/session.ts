@@ -486,6 +486,27 @@ export const makeSessionGroup = <
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.steerSynthetic", "/api/session/:sessionID/synthetic/steer", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          id: SessionMessage.ID,
+          text: Schema.String,
+          metadata: SessionMessage.Synthetic.fields.metadata,
+        }),
+        success: Schema.Struct({ data: SessionInbox.Synthetic }),
+        error: [ConflictError, SessionNotFoundError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "session.steerSynthetic",
+            summary: "Interrupt and steer session",
+            description:
+              "Admit synthetic steering input once in a top-level session, interrupt active execution as superseded, and continue with updated context. Retries return the first admission without interrupting again. New inputs conflict for child sessions or staged reverts.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.synthetic", "/api/session/:sessionID/synthetic", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({

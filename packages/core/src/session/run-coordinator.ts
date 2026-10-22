@@ -152,7 +152,12 @@ export const make = <Key, E, Reason = never>(options: {
     const interrupt = (key: Key, reason?: Reason): Effect.Effect<boolean> =>
       Effect.sync(() => {
         const execution = executions.get(key)
-        if (execution === undefined || execution.stopping) return false
+        if (execution === undefined) return false
+        if (execution.stopping) {
+          execution.pendingWake = undefined
+          execution.interruptionReason = reason
+          return false
+        }
         if (execution.owner === undefined) {
           // Settlement window: the owner exited but the settled hook has not finished. The
           // terminal outcome is already decided, so no reason attaches — but the interrupt

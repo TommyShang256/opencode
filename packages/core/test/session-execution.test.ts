@@ -49,6 +49,7 @@ describe("SessionExecution lifecycle", () => {
     const interrupted = Effect.runSyncExit(Effect.interrupt)
     expect(SessionExecution.terminal(interrupted)).toEqual({ type: "interrupted", reason: "shutdown" })
     expect(SessionExecution.terminal(interrupted, "user")).toEqual({ type: "interrupted", reason: "user" })
+    expect(SessionExecution.terminal(interrupted, "superseded")).toEqual({ type: "interrupted", reason: "superseded" })
   })
 
   it.effect("the sweep only lists claimed top-level Sessions", () =>
@@ -1125,6 +1126,95 @@ describe("SessionRestart background recovery", () => {
 })
 
 describe("SessionExecution interrupt continuation", () => {
+  for (const phase of ["cleanup", "settlement"]) {
+    it.effect(`honors a user stop during superseded ${phase} without restarting or retaining a claim`, () =>
+      Effect.gen(function* () {
+        const database = yield* Database.Service
+        const bus = yield* Bus.Service
+        const sessionID = Session.ID.make(`ses_stop_superseded_${phase}`)
+        yield* seedSessions(database, [sessionID])
+        const draining = yield* Deferred.make<void>()
+        const stopping = yield* Deferred.make<void>()
+        const release = yield* Deferred.make<void>()
+        const pause = Deferred.succeed(stopping, undefined).pipe(Effect.andThen(Deferred.await(release)))
+        const scope = yield* Scope.make()
+        yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+        let drains = 0
+        const context = yield* buildExecution(scope, () =>
+          Effect.suspend(() => {
+            drains++
+            if (drains > 1) return Effect.void
+            return Deferred.succeed(draining, undefined).pipe(
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() => (phase === "cleanup" ? pause : Effect.void)),
+            )
+          }),
+        )
+        yield* bus.listen((event) =>
+          phase === "settlement" && event.type === SessionEvent.Execution.Interrupted.type ? pause : Effect.void,
+        )
+        const execution = Context.get(context, SessionExecution.Service)
+        yield* execution.resume(sessionID).pipe(Effect.forkScoped)
+        yield* Deferred.await(draining)
+        yield* execution.interrupt(sessionID, { reason: "superseded", resume: true })
+        yield* Deferred.await(stopping)
+
+        yield* execution.interrupt(sessionID)
+
+        const stoppedClaim = (yield* claims(database))[sessionID]
+        yield* Deferred.succeed(release, undefined)
+        yield* execution.awaitIdle(sessionID)
+        expect(stoppedClaim).toBe(false)
+        expect(drains).toBe(1)
+        expect((yield* claims(database))[sessionID]).toBe(false)
+      }),
+    )
+  }
+
+  it.effect("keeps the recovery claim across superseded settlement until the successor completes", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const bus = yield* Bus.Service
+      const sessionID = Session.ID.make("ses_superseded_claim")
+      yield* seedSessions(database, [sessionID])
+      const draining = yield* Deferred.make<void>()
+      const resumed = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      let drains = 0
+      const context = yield* buildExecution(scope, () =>
+        Effect.suspend(() => {
+          drains++
+          return drains === 1
+            ? Deferred.succeed(draining, undefined).pipe(Effect.andThen(Effect.never))
+            : Deferred.succeed(resumed, undefined).pipe(Effect.andThen(Deferred.await(release)))
+        }),
+      )
+      const interruptedClaims: boolean[] = []
+      yield* bus.listen((event) =>
+        event.type === SessionEvent.Execution.Interrupted.type
+          ? claims(database).pipe(
+              Effect.map((values) => {
+                interruptedClaims.push(values[sessionID])
+              }),
+            )
+          : Effect.void,
+      )
+      const execution = Context.get(context, SessionExecution.Service)
+      yield* execution.resume(sessionID).pipe(Effect.forkScoped)
+      yield* Deferred.await(draining)
+      yield* execution.interrupt(sessionID, { reason: "superseded", resume: true })
+      yield* Deferred.await(resumed)
+
+      expect(interruptedClaims).toEqual([true])
+      expect((yield* claims(database))[sessionID]).toBe(true)
+      yield* Deferred.succeed(release, undefined)
+      yield* execution.awaitIdle(sessionID)
+      expect((yield* claims(database))[sessionID]).toBe(false)
+    }),
+  )
+
   it.effect("resumes only steering input after an interrupt with continue", () =>
     Effect.gen(function* () {
       const database = yield* Database.Service
@@ -1155,6 +1245,31 @@ describe("SessionExecution interrupt continuation", () => {
         { force: true, promotable: "input" },
         { force: false, promotable: "steer" },
       ])
+    }),
+  )
+
+  it.effect("continues a superseded execution even when its new steer was already promoted", () =>
+    Effect.gen(function* () {
+      const database = yield* Database.Service
+      const sessionID = Session.ID.make("ses_superseded_promoted")
+      yield* seedSessions(database, [sessionID])
+      const draining = yield* Deferred.make<void>()
+      const drains: Array<SessionInbox.Promotable | undefined> = []
+      const scope = yield* Scope.make()
+      yield* Effect.addFinalizer(() => Scope.close(scope, Exit.void))
+      const context = yield* buildExecution(scope, (input) =>
+        Effect.suspend(() => {
+          drains.push(input.promotable)
+          if (drains.length > 1) return Effect.void
+          return Deferred.succeed(draining, undefined).pipe(Effect.andThen(Effect.never))
+        }),
+      )
+      const execution = Context.get(context, SessionExecution.Service)
+      yield* execution.resume(sessionID).pipe(Effect.forkScoped)
+      yield* Deferred.await(draining)
+      yield* execution.interrupt(sessionID, { reason: "superseded", resume: true })
+      yield* execution.awaitIdle(sessionID)
+      expect(drains).toEqual(["input", "steer"])
     }),
   )
 

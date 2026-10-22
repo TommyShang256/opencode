@@ -412,6 +412,33 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.steerSynthetic",
+        Effect.fn(function* (ctx) {
+          const data = yield* session
+            .synthetic({
+              id: ctx.payload.id,
+              sessionID: ctx.params.sessionID,
+              text: ctx.payload.text,
+              metadata: ctx.payload.metadata,
+              delivery: "steer",
+              resume: false,
+              immediate: true,
+            })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", missingSession),
+              Effect.catchTag("Session.SyntheticConflictError", (error) =>
+                Effect.fail(
+                  new ConflictError({
+                    message: `Synthetic input ID conflicts with an existing durable record: ${error.inputID}`,
+                    resource: error.inputID,
+                  }),
+                ),
+              ),
+            )
+          return { data }
+        }),
+      )
+      .handle(
         "session.synthetic",
         Effect.fn(function* (ctx) {
           const data = yield* session

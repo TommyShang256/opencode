@@ -318,6 +318,17 @@ export type SessionSkillInput = {
 export type SessionSkillOutput = void
 export type SessionSkillOperation<E = never> = (input: SessionSkillInput) => Effect.Effect<SessionSkillOutput, E>
 
+export type SessionSteerSyntheticInput = {
+  readonly sessionID: Session.ID
+  readonly id: SessionMessage.ID
+  readonly text: string
+  readonly metadata?: { readonly [x: string]: unknown } | undefined
+}
+export type SessionSteerSyntheticOutput = SessionInbox.Synthetic
+export type SessionSteerSyntheticOperation<E = never> = (
+  input: SessionSteerSyntheticInput,
+) => Effect.Effect<SessionSteerSyntheticOutput, E>
+
 export type SessionSyntheticInput = {
   readonly sessionID: Session.ID
   readonly id?: SessionMessage.ID | undefined
@@ -1505,6 +1516,7 @@ export interface SessionApi<E = never> {
   readonly clientToolResults: SessionClientToolResultsOperation<E>
   readonly command: SessionCommandOperation<E>
   readonly skill: SessionSkillOperation<E>
+  readonly steerSynthetic: SessionSteerSyntheticOperation<E>
   readonly synthetic: SessionSyntheticOperation<E>
   readonly shell: SessionShellOperation<E>
   readonly compact: SessionCompactOperation<E>
