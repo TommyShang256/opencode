@@ -14,6 +14,7 @@ import { Session } from "../../session.js"
 import { SessionSchema } from "../../session/schema.js"
 import { SubagentCompletion } from "../../session/subagent-completion.js"
 import { SubagentJob } from "../../session/subagent-job.js"
+import { SubagentProgress } from "./subagent-progress.js"
 
 export const name = "subagent"
 
@@ -98,29 +99,27 @@ export const Plugin = {
       return ref
     })
 
+    const childProgress = Effect.fn("SubagentTool.childProgress")(function* (
+      sessionID: SessionSchema.ID,
+      startedAt: number,
+    ) {
+      const messages = (yield* sessions.messages({ sessionID, order: "desc", limit: 200 })).toReversed()
+      return { messageCount: messages.length, startedAt, ...SubagentProgress.snapshot(messages, startedAt) }
+    })
+
+    // Reports only changes: a long thought keeps the same `current.since`, and the card counts its time itself.
     const reportChildProgress = Effect.fn("SubagentTool.reportChildProgress")(function* (
       sessionID: SessionSchema.ID,
       progress: Tool.Context["progress"],
+      startedAt: number,
     ) {
       let fingerprint = ""
       yield* Effect.gen(function* () {
-        const messages = yield* sessions.messages({ sessionID, order: "desc", limit: 20 })
-        const activities = messages
-          .toReversed()
-          .flatMap((message) => {
-            if (message.type !== "assistant") return []
-            return message.content.flatMap((part) => {
-              if (part.type === "tool") return [{ kind: "tool", label: part.name, status: part.state.status }]
-              if (part.type === "text" && part.text.trim())
-                return [{ kind: "text", label: part.text.trim().slice(0, 240), status: "completed" }]
-              return []
-            })
-          })
-          .slice(-6)
-        const next = JSON.stringify(activities)
-        if (next !== fingerprint) {
-          fingerprint = next
-          yield* progress({ sessionID, status: "running", messageCount: messages.length, activities })
+        const next = yield* childProgress(sessionID, startedAt)
+        const key = JSON.stringify([next.stepCount, next.current, next.activities])
+        if (key !== fingerprint) {
+          fingerprint = key
+          yield* progress({ sessionID, status: "running", ...next })
         }
         yield* Effect.sleep("1 second")
       }).pipe(Effect.forever)
@@ -268,7 +267,10 @@ export const Plugin = {
                 return backgroundResult(child.id)
               }
 
-const progressFiber = yield* reportChildProgress(child.id, context.progress).pipe(Effect.forkChild({ startImmediately: true }))
+              const startedAt = Date.now()
+              const progressFiber = yield* reportChildProgress(child.id, context.progress, startedAt).pipe(
+                Effect.forkChild({ startImmediately: true }),
+              )
               const result = yield* jobs.block({ id: child.id, sessionID: context.sessionID }).pipe(
                 Effect.onInterrupt(() =>
                   Effect.all([sessions.interrupt(child.id), jobs.cancel(child.id)], {
@@ -281,6 +283,15 @@ const progressFiber = yield* reportChildProgress(child.id, context.progress).pip
                 yield* subagents.notify(recovery, result.info.started_at)
                 return backgroundResult(child.id)
               }
+              const finalStatus = result?.info.status === "error" || result?.info.status === "cancelled"
+                ? result.info.status
+                : "completed"
+              yield* childProgress(child.id, startedAt).pipe(
+                Effect.flatMap((last) =>
+                  context.progress({ sessionID: child.id, status: finalStatus, finishedAt: Date.now(), ...last }),
+                ),
+                Effect.ignore,
+              )
               // Failure surfaces keep the sessionID visible so the model can continue the child.
               if (result?.info.status === "error")
                 return yield* new ToolFailure({

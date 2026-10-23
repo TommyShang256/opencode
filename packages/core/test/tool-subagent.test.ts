@@ -432,6 +432,9 @@ describe("SubagentTool", () => {
           expect(settled.content).toEqual([{ type: "text", text: completedOutput(child.id) }])
           expect(settled.metadata).toEqual({ sessionID: child.id, status: "completed" })
           expect(progress[0]).toEqual({ sessionID: child.id, status: "running" })
+          // The card's last word on the child: its final state, when it ended and the steps it took.
+          expect(progress.at(-1)).toMatchObject({ sessionID: child.id, status: "completed", stepCount: 0 })
+          expect(typeof progress.at(-1)?.finishedAt).toBe("number")
           expect(child).toMatchObject({
             parentID: parent.id,
             location: parent.location,
