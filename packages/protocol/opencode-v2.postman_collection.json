@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "DataAgent V2 HTTP API",
-    "description": "Generated from packages/protocol/openapi.json. Contains 141 operations.",
+    "description": "Generated from packages/protocol/openapi.json. Contains 142 operations.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -935,6 +935,16 @@
             "header": [],
             "url": "{{baseUrl}}/api/session/{{sessionID}}/message",
             "description": "Retrieve projected messages for a session. Items keep the requested order across pages; use cursor.next or cursor.previous to move through the ordered timeline."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/session/{sessionID}/context/clear — Clear session context",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": "{{baseUrl}}/api/session/{{sessionID}}/context/clear",
+            "description": "Create an empty context boundary in an idle session while retaining its identity, instructions and full transcript. Pending input or a staged revert conflicts."
           },
           "response": []
         }

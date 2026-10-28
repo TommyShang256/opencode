@@ -389,6 +389,12 @@ export type SessionContextInput = { readonly sessionID: Session.ID }
 export type SessionContextOutput = ReadonlyArray<SessionMessage.Info>
 export type SessionContextOperation<E = never> = (input: SessionContextInput) => Effect.Effect<SessionContextOutput, E>
 
+export type SessionClearContextInput = { readonly sessionID: Session.ID; readonly id?: SessionMessage.ID | undefined }
+export type SessionClearContextOutput = void
+export type SessionClearContextOperation<E = never> = (
+  input: SessionClearContextInput,
+) => Effect.Effect<SessionClearContextOutput, E>
+
 export type SessionDiffInput = {
   readonly sessionID: Session.ID
   readonly from?: SessionMessage.ID | undefined
@@ -1527,6 +1533,7 @@ export interface SessionApi<E = never> {
     readonly commit: SessionRevertCommitOperation<E>
   }
   readonly context: SessionContextOperation<E>
+  readonly clearContext: SessionClearContextOperation<E>
   readonly diff: SessionDiffOperation<E>
   readonly inbox: {
     readonly list: SessionInboxListOperation<E>

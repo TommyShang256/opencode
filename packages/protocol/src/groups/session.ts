@@ -634,6 +634,20 @@ export const makeSessionGroup = <
       ),
     )
     .add(
+      HttpApiEndpoint.post("session.clearContext", "/api/session/:sessionID/context/clear", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ id: SessionMessage.ID.pipe(Schema.optional) }),
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, SessionBusyError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(OpenApi.annotations({
+          identifier: "session.clearContext",
+          summary: "Clear session context",
+          description: "Create an empty context boundary in an idle session while retaining its identity, instructions and full transcript. Pending input or a staged revert conflicts.",
+        })),
+    )
+    .add(
       HttpApiEndpoint.get("session.diff", "/api/session/:sessionID/diff", {
         params: { sessionID: Session.ID },
         query: Schema.Struct({

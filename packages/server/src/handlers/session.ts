@@ -495,6 +495,16 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.clearContext",
+        Effect.fn(function* (ctx) {
+          yield* session.clearContext(ctx.params.sessionID, ctx.payload).pipe(
+            Effect.catchTag("Session.NotFoundError", missingSession),
+            Effect.catchTag("Session.BusyError", busySession),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.wait",
         Effect.fn(function* (ctx) {
           yield* session.wait(ctx.params.sessionID).pipe(Effect.catchTag("Session.NotFoundError", missingSession))

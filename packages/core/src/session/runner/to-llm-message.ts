@@ -302,6 +302,7 @@ function toLLMMessage(message: SessionMessage.Info, model: Model.Ref, providerMe
       return assistant(message, model, providerMetadataKey)
     case "compaction":
       if (message.status !== "completed") return []
+      if (message.metadata?.contextCleared === true && !message.summary && !message.recent && !message.providerContext) return []
       // History selection only keeps native windows the target model can replay.
       if (SessionProviderContext.isCheckpoint(message))
         return [...SessionProviderContext.decode(message.providerContext)]

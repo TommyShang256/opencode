@@ -73,6 +73,8 @@ import type {
   SessionRevertCommitOutput,
   SessionContextInput,
   SessionContextOutput,
+  SessionClearContextInput,
+  SessionClearContextOutput,
   SessionDiffInput,
   SessionDiffOutput,
   SessionInboxListInput,
@@ -629,6 +631,13 @@ const EndpointSessionContext = (raw: RawClient["server.session"]) => (input: Ses
     ),
   )
 
+const EndpointSessionClearContext = (raw: RawClient["server.session"]) => (input: SessionClearContextInput) =>
+  preserveEffect<SessionClearContextOutput>()(
+    raw["session.clearContext"]({ params: { sessionID: input["sessionID"] }, payload: { id: input["id"] } }).pipe(
+      Effect.mapError(mapClientError),
+    ),
+  )
+
 const EndpointSessionDiff = (raw: RawClient["server.session"]) => (input: SessionDiffInput) =>
   preserveEffect<SessionDiffOutput>()(
     raw["session.diff"]({
@@ -816,6 +825,7 @@ const adaptGroupSession = (raw: RawClient["server.session"]) => ({
     commit: EndpointSessionRevertCommit(raw),
   },
   context: EndpointSessionContext(raw),
+  clearContext: EndpointSessionClearContext(raw),
   diff: EndpointSessionDiff(raw),
   inbox: {
     list: EndpointSessionInboxList(raw),

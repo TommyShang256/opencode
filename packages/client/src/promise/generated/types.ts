@@ -4711,6 +4711,13 @@ export type SessionContextInput = { readonly sessionID: { readonly sessionID: st
 
 export type SessionContextOutput = { data: Array<SessionMessageInfo> }["data"]
 
+export type SessionClearContextInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly id?: { readonly id?: string | undefined }["id"]
+}
+
+export type SessionClearContextOutput = void
+
 export type SessionDiffInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly from?: {

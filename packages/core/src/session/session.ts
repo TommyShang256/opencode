@@ -264,6 +264,20 @@ export const make = Effect.fn("Session.make")(function* () {
     yield* execution.wake(sessionID)
     return admitted
   })
+  const clearContext = (sessionID: SessionSchema.ID, input: { id?: SessionMessage.ID } = {}) =>
+    SessionInbox.serialized(sessionID, Effect.gen(function* () {
+      const session = yield* get(sessionID)
+      const previous = input.id ? yield* message(sessionID, input.id) : undefined
+      if (previous?.metadata?.contextCleared === true) return
+      if (previous) return yield* new BusyError({ sessionID })
+      if (session.revert || (yield* execution.isActive(sessionID)) || (yield* admission.list(sessionID)).length > 0)
+        return yield* new BusyError({ sessionID })
+      // An empty local checkpoint is a durable context boundary for every model.
+      // The original transcript and current instruction baseline remain intact.
+      yield* bus.publish(SessionEvent.Compaction.Ended, {
+        sessionID, reason: "manual", model: session.model, text: "", recent: "",
+      }, { metadata: { contextCleared: true }, ...(input.id ? { id: Event.ID.make(input.id.replace(/^msg_/, "evt_")) } : {}) })
+    }))
   const wait = Effect.fn("Session.wait")(function* (sessionID: SessionSchema.ID) {
     yield* get(sessionID)
     yield* execution.awaitIdle(sessionID)
@@ -478,6 +492,7 @@ export const make = Effect.fn("Session.make")(function* () {
     shell,
     skill,
     compact,
+    clearContext,
     wait,
     resume,
     clientToolResults,
@@ -503,6 +518,7 @@ export const make = Effect.fn("Session.make")(function* () {
     const shell = operations.shell.bind(undefined, sessionID)
     const skill = operations.skill.bind(undefined, sessionID)
     const compact = operations.compact.bind(undefined, sessionID)
+    const clearContext = operations.clearContext.bind(undefined, sessionID)
     const wait = operations.wait.bind(undefined, sessionID)
     const resume = operations.resume.bind(undefined, sessionID)
     const clientToolResults = operations.clientToolResults.bind(undefined, sessionID)
@@ -531,6 +547,7 @@ export const make = Effect.fn("Session.make")(function* () {
       shell,
       skill,
       compact,
+      clearContext,
       wait,
       resume,
       clientToolResults,

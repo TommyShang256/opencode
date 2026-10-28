@@ -67,6 +67,8 @@ import type {
   SessionRevertCommitOutput,
   SessionContextInput,
   SessionContextOutput,
+  SessionClearContextInput,
+  SessionClearContextOutput,
   SessionDiffInput,
   SessionDiffOutput,
   SessionInboxListInput,
@@ -897,6 +899,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      clearContext: (input: SessionClearContextInput, requestOptions?: RequestOptions) =>
+        request<SessionClearContextOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/context/clear`,
+            body: { id: input["id"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401, 404, 409],
+            empty: true,
+          },
+          requestOptions,
+        ),
       diff: (input: SessionDiffInput, requestOptions?: RequestOptions) =>
         request<{ readonly data: SessionDiffOutput }>(
           {

@@ -139,6 +139,7 @@ export interface Interface {
   readonly context: (
     sessionID: SessionSchema.ID,
   ) => Effect.Effect<SessionMessage.Info[], NotFoundError | MessageDecodeError>
+  readonly clearContext: (sessionID: SessionSchema.ID, input?: { id?: SessionMessage.ID }) => Effect.Effect<void, NotFoundError | BusyError>
   /** Structured diffs of the files changed by a turn or range of turns; see `SessionDiff.turn`. */
   readonly diff: (input: {
     readonly sessionID: SessionSchema.ID
@@ -428,6 +429,7 @@ const layer = Layer.effect(
       setPermissions: (input) => sessions.forSession(input.sessionID).setPermissions(input),
       move: moves.move,
       compact: (input) => sessions.forSession(input.sessionID).compact(input),
+      clearContext: (sessionID, input) => sessions.forSession(sessionID).clearContext(input),
       wait: (sessionID) => sessions.forSession(sessionID).wait(),
       active: execution.active,
       background: Effect.fn("Session.background")(function* (sessionID) {

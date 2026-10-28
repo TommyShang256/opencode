@@ -4,7 +4,7 @@
 
 导入同目录的 `opencode-v2.postman_collection.json` 后，设置 Collection Variables 中的 `baseUrl`、`username` 和 `password`。
 
-共 **141** 个 HTTP 操作、**32** 个分类。
+共 **142** 个 HTTP 操作、**32** 个分类。
 
 ## health
 
@@ -993,6 +993,30 @@ Operation ID: `v2.session.context`
 ```bash
 curl --request GET \
   --url '{{baseUrl}}/api/session/{{sessionID}}/context' \
+  --user '{{username}}:{{password}}'
+```
+
+### `POST /api/session/{sessionID}/context/clear` — Clear session context
+
+Create an empty context boundary in an idle session while retaining its identity, instructions and full transcript. Pending input or a staged revert conflicts.
+
+Operation ID: `session.clearContext`
+
+| 位置 | 名称 | 必填 |
+|---|---|---:|
+| path | `sessionID` | 是 |
+
+响应状态：
+
+- `204`: <No Content>
+- `400`: InvalidRequestError
+- `401`: UnauthorizedError
+- `404`: SessionNotFoundError
+- `409`: SessionBusyError
+
+```bash
+curl --request POST \
+  --url '{{baseUrl}}/api/session/{{sessionID}}/context/clear' \
   --user '{{username}}:{{password}}'
 ```
 
